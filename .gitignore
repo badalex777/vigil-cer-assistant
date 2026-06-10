@@ -1,0 +1,21 @@
+# --- Secrets: NEVER commit these ---
+.env
+*.key
+
+# --- Runtime data (regenerated each run) ---
+vigil.db
+*.db
+uploads/
+retrieval_cache/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- OS / editor cruft ---
+.DS_Store
+.replit_history
+*.log
