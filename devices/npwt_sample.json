@@ -1,0 +1,57 @@
+{
+  "device_name": "PortaVac NPWT System",
+  "manufacturer": "Example MedTech B.V.",
+  "device_description": "A portable, single-patient negative pressure wound therapy (NPWT) system delivering continuous and intermittent sub-atmospheric pressure (-40 to -200 mmHg) to a sealed wound dressing via a battery-powered pump, intended for management of acute and chronic wounds.",
+  "intended_purpose": "Promotion of wound healing through the application of controlled negative pressure to chronic, acute, traumatic, dehisced, and surgically closed wounds, and to skin grafts and flaps, in adult patients.",
+  "classification": "IIb",
+  "classification_rule": "Rule 7",
+
+  "device_synonyms": [
+    "negative pressure wound therapy",
+    "NPWT",
+    "topical negative pressure",
+    "vacuum-assisted closure",
+    "VAC therapy",
+    "sub-atmospheric pressure dressing"
+  ],
+  "comparator_devices": [
+    "V.A.C. Therapy",
+    "PICO single use NPWT",
+    "RENASYS"
+  ],
+
+  "medical_condition": [
+    "chronic wound",
+    "diabetic foot ulcer",
+    "pressure ulcer",
+    "surgical wound dehiscence",
+    "venous leg ulcer"
+  ],
+  "technology_category": [
+    "wound dressing",
+    "wound management device"
+  ],
+  "therapeutic_area": [
+    "wound care",
+    "tissue viability"
+  ],
+
+  "date_from": "2015/01/01",
+  "date_to": "2025/12/31",
+  "languages": ["English"],
+  "inclusion_criteria": [
+    "Human clinical studies (RCT, cohort, case series with >=10 patients)",
+    "Reports clinical outcomes, performance, or safety of NPWT in target indications",
+    "Published 2015-2025",
+    "English language"
+  ],
+  "exclusion_criteria": [
+    "Animal or in vitro studies only",
+    "Editorials, letters, conference abstracts without data",
+    "Indications outside intended purpose",
+    "Fewer than 10 patients (case reports)",
+    "Full text not available in English"
+  ],
+
+  "profile_version": "1.0"
+}

@@ -1,0 +1,130 @@
+"""
+Vigil — Stage: full-text appraisal (Phase B).
+
+Performs a MEDDEV 2.7/1 rev 4 Appendix A6 appraisal (methodological quality,
+relevance, data contribution) plus full extraction on the COMPLETE paper, moving
+it from `appraisal_incomplete` to fully appraised.
+
+Full text arrives from ONE of three sources (see retrieve.py + manual upload):
+  - PMC open access  -> plain text / XML  -> text appraisal
+  - Unpaywall OA PDF -> pdf bytes         -> native-PDF appraisal
+  - PRRC manual upload (residual paywalled) -> pdf bytes -> native-PDF appraisal
+
+Auto-retrieval handles the bulk; the PRRC only uploads the residual. Vigil never
+circumvents a paywall.
+
+PDFs are sent NATIVELY to Claude (tables/figures survive). PMC text is embedded.
+"""
+from __future__ import annotations
+
+import config
+import db
+from llm import load_prompt, call_json_pdf, call_json_fulltext_text
+
+_SYSTEM = ("You output only valid JSON. No markdown, no preamble. "
+           "Unknown stays unknown. You describe and appraise; you never conclude "
+           "on safety, efficacy, equivalence, or compliance.")
+
+
+def _fmt(profile, rec) -> str:
+    tmpl = load_prompt(config.PROMPT_APPRAISE)
+    return tmpl.format(
+        pmid=rec["pmid"],
+        title=rec.get("title", ""),
+        device_name=profile.device_name,
+        intended_purpose=profile.intended_purpose,
+    )
+
+
+def appraise_pdf(profile, rec, pdf_bytes, call=None):
+    call = call or call_json_pdf
+    user = _fmt(profile, rec)
+    result = call(config.MODEL_APPRAISE, _SYSTEM, user, pdf_bytes,
+                  config.MAX_TOKENS_APPRAISE)
+    return _finish(rec, result)
+
+
+def appraise_text(profile, rec, fulltext, call=None):
+    call = call or call_json_fulltext_text
+    user = _fmt(profile, rec)
+    result = call(config.MODEL_APPRAISE, _SYSTEM, user, fulltext,
+                  config.MAX_TOKENS_APPRAISE)
+    return _finish(rec, result)
+
+
+def _finish(rec, result):
+    if result.get("_parse_error"):
+        # Under-claim: failed appraisal leaves the paper flagged, not promoted.
+        return ({"pmid": rec["pmid"], "error": "appraisal_parse_failed"},
+                "appraisal_incomplete")
+    if result.get("identity_mismatch"):
+        # LLM self-check (defense in depth) caught a wrong document. Do not promote.
+        return ({"pmid": rec["pmid"], "error": "identity_mismatch",
+                 "reason": result.get("reason", "")}, "appraisal_incomplete")
+    result.setdefault("pmid", rec["pmid"])
+    result["track"] = rec["track"]
+    result["appraisal_mode"] = "fulltext"
+    return result, "complete"
+
+
+def run_from_retrieval(db_path, run_id, profile, retrieval: dict,
+                       pdf_call=None, text_call=None, progress=lambda s: None):
+    """Appraise everything auto-retrieved (PMC text or Unpaywall PDF).
+
+    retrieval: {pmid: {status, kind, text, pdf_bytes, source_url}}  (from retrieve.py)
+    Papers with kind None (paywalled_manual) are skipped here — they go to the
+    manual-upload list and are handled by run_from_uploads().
+    """
+    results = {}
+    for pmid, res in retrieval.items():
+        if res["kind"] is None:
+            continue  # residual paywalled -> manual upload path
+        rows = db.get_records(db_path, run_id, f"pmid='{pmid}'")
+        if not rows:
+            continue
+        rec = rows[0]
+        db.set_retrieval_source(db_path, run_id, pmid, res["status"], res["source_url"])
+        if res["kind"] == "pdf":
+            appraisal, status = appraise_pdf(profile, rec, res["pdf_bytes"], call=pdf_call)
+        else:  # 'xml_text'
+            appraisal, status = appraise_text(profile, rec, res["text"], call=text_call)
+        db.set_fulltext_appraisal(db_path, run_id, pmid, appraisal, status)
+        results[pmid] = status
+        progress(f"  appraised PMID {pmid} ({res['status']}): {status}")
+    db.log(db_path, run_id, "appraise_auto",
+           f"auto-appraised {len(results)}: {results}")
+    return results
+
+
+def run_from_uploads(db_path, run_id, profile, uploads: dict, pdf_call=None,
+                     progress=lambda s: None):
+    """Appraise PRRC-uploaded PDFs (the residual papers).
+    uploads: {pmid: pdf_bytes}.
+
+    Identity is verified as a SOFT check here (the PRRC deliberately chose the
+    file): the verdict is recorded for the audit trail and a mismatch is surfaced,
+    but the upload is still appraised since a human made the association.
+    """
+    import verify
+    results = {}
+    for pmid, pdf_bytes in uploads.items():
+        rows = db.get_records(db_path, run_id, f"pmid='{pmid}'")
+        if not rows:
+            continue
+        rec = rows[0]
+        verdict = verify.verify(rec, verify.extract_pdf_identifiers(pdf_bytes))
+        db.set_verification(db_path, run_id, pmid, verdict)
+        if verdict["result"] not in verify.VERIFIED:
+            progress(f"  ⚠ PMID {pmid}: uploaded file did not verify "
+                     f"({verdict['result']}, score {verdict['score']}) — "
+                     f"appraising as PRRC chose it; flagged in audit trail.")
+        db.attach_fulltext(db_path, run_id, pmid,
+                           f"{config.UPLOADS_DIR}/{run_id}/{pmid}.pdf")
+        db.set_retrieval_source(db_path, run_id, pmid, "prrc_upload", None)
+        appraisal, status = appraise_pdf(profile, rec, pdf_bytes, call=pdf_call)
+        db.set_fulltext_appraisal(db_path, run_id, pmid, appraisal, status)
+        results[pmid] = status
+        progress(f"  appraised uploaded PMID {pmid}: {status}")
+    db.log(db_path, run_id, "appraise_upload",
+           f"upload-appraised {len(results)}: {results}")
+    return results

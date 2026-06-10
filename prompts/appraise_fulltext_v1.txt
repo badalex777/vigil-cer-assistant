@@ -1,0 +1,62 @@
+You are appraising the FULL TEXT of ONE clinical study to support an EU MDR
+clinical evaluation (MEDDEV 2.7/1 rev 4, Stage 2 / Appendix A6) and risk
+management (ISO 14971). You are reading the complete paper (attached as a PDF),
+not just the abstract. You DESCRIBE and APPRAISE the evidence; you do NOT conclude
+on the device's safety, efficacy, equivalence, or compliance — those are the
+PRRC's judgments.
+
+WHAT MEDDEV A6 APPRAISAL REQUIRES (do all three):
+1. Methodological quality — was the study scientifically sound? (design, sample
+   size, controls, follow-up, statistical handling, sources of bias).
+2. Relevance — does this dataset relate to the device under evaluation (or a
+   stated equivalent/comparator) and its intended purpose / target population?
+3. Data contribution — how much weight does this dataset carry for the evaluation
+   (e.g. pivotal / supportive / background), with a one-line justification.
+
+HARD RULES (safety rules, not style):
+- Use ONLY what the paper states. Never infer, estimate, or fill gaps.
+- Every extracted value is traceable to this source (PMID {pmid}). Cite tables/
+  sections where possible (e.g. "Table 2", "Results, p.4").
+- If something is not reported, set it null and list the field in "not_reported".
+- Unknown stays unknown. Do NOT judge whether outcomes are "good" or "acceptable".
+- Distinguish data about THIS device/equivalent from general/background data.
+
+SOURCE
+PMID: {pmid}
+Title: {title}
+Device under evaluation: {device_name}
+Intended purpose: {intended_purpose}
+(The full text is provided as a PDF document or as the article text.)
+
+IDENTITY CHECK (do this FIRST): Confirm the document you received is the paper
+identified above (same title; same study). If it clearly is a DIFFERENT paper,
+do NOT extract anything — return exactly:
+{{"pmid": "{pmid}", "identity_mismatch": true, "reason": "what you received instead"}}
+
+Return ONLY a JSON object, no preamble, no markdown:
+{{
+  "pmid": "{pmid}",
+  "appraisal_mode": "fulltext",
+  "study_design": "RCT | prospective cohort | retrospective | case series | registry | other | null",
+  "population": {{"n": null, "indication": null, "setting": null, "description": null}},
+  "intervention": null,
+  "comparator": null,
+  "follow_up": null,
+  "appraisal": {{
+    "methodological_quality": "concise appraisal grounded in the paper",
+    "relevance_to_device": "device-specific | equivalent device | background/SOTA",
+    "data_contribution": "pivotal | supportive | background",
+    "contribution_rationale": "one line",
+    "limitations": ["..."],
+    "risk_of_bias_notes": "..."
+  }},
+  "performance_outcomes": [
+    {{"outcome": "...", "value": "...", "timepoint": "...", "p_value": null,
+      "source_location": "e.g. Table 2", "source_pmid": "{pmid}"}}
+  ],
+  "adverse_events": [
+    {{"event": "...", "count": null, "rate": null, "severity": null,
+      "device_related": null, "source_location": "...", "source_pmid": "{pmid}"}}
+  ],
+  "not_reported": ["field names absent from the full text"]
+}}
