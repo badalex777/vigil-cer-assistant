@@ -1,22 +1,22 @@
 """
-Vigil — open-access full-text retrieval.
+Vigil - open-access full-text retrieval.
 
 Goal: minimise PRRC manual work. The PRRC should only ever upload the residual
 papers that have NO legal open-access copy. Everything reachable for free is
 fetched and appraised automatically.
 
 Three tiers, tried in order:
-  1. PMC (PubMed Central) — if the PubMed record links a PMCID, fetch the
+  1. PMC (PubMed Central) - if the PubMed record links a PMCID, fetch the
      open-access full text as machine-readable XML via E-utilities (efetch from
      the 'pmc' db). Cleanest source.
-  2. Unpaywall — given a DOI, ask Unpaywall for a legal OA PDF location and
+  2. Unpaywall - given a DOI, ask Unpaywall for a legal OA PDF location and
      download it. Covers author manuscripts, repository copies, gold OA.
-  3. None found — leave the paper for the PRRC manual-upload list.
+  3. None found - leave the paper for the PRRC manual-upload list.
 
 Vigil NEVER circumvents a paywall. Unpaywall only ever returns links the publisher
 or author has made openly available. Anything paywalled stays manual.
 
-Retrieval status recorded per paper (audit trail — the search report must show HOW
+Retrieval status recorded per paper (audit trail - the search report must show HOW
 each full text was obtained):
     'pmc_xml'            full text from PMC open access (XML)
     'unpaywall_pdf'      OA PDF located + downloaded via Unpaywall
@@ -24,7 +24,7 @@ each full text was obtained):
     'retrieval_error'    a fetch was attempted and failed; flagged for PRRC
 
 This module returns content + status; it does NOT appraise (that's appraise.py).
-Network access (NCBI, Unpaywall) is required — runs on Replit, not the chat sandbox.
+Network access (NCBI, Unpaywall) is required - runs on Replit, not the chat sandbox.
 """
 from __future__ import annotations
 import json

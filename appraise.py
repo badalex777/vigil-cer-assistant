@@ -1,5 +1,5 @@
 """
-Vigil — Stage: full-text appraisal (Phase B).
+Vigil - Stage: full-text appraisal (Phase B).
 
 Performs a MEDDEV 2.7/1 rev 4 Appendix A6 appraisal (methodological quality,
 relevance, data contribution) plus full extraction on the COMPLETE paper, moving
@@ -72,7 +72,7 @@ def run_from_retrieval(db_path, run_id, profile, retrieval: dict,
     """Appraise everything auto-retrieved (PMC text or Unpaywall PDF).
 
     retrieval: {pmid: {status, kind, text, pdf_bytes, source_url}}  (from retrieve.py)
-    Papers with kind None (paywalled_manual) are skipped here — they go to the
+    Papers with kind None (paywalled_manual) are skipped here - they go to the
     manual-upload list and are handled by run_from_uploads().
     """
     results = {}
@@ -115,8 +115,8 @@ def run_from_uploads(db_path, run_id, profile, uploads: dict, pdf_call=None,
         verdict = verify.verify(rec, verify.extract_pdf_identifiers(pdf_bytes))
         db.set_verification(db_path, run_id, pmid, verdict)
         if verdict["result"] not in verify.VERIFIED:
-            progress(f"  ⚠ PMID {pmid}: uploaded file did not verify "
-                     f"({verdict['result']}, score {verdict['score']}) — "
+            progress(f"  ? PMID {pmid}: uploaded file did not verify "
+                     f"({verdict['result']}, score {verdict['score']}) - "
                      f"appraising as PRRC chose it; flagged in audit trail.")
         db.attach_fulltext(db_path, run_id, pmid,
                            f"{config.UPLOADS_DIR}/{run_id}/{pmid}.pdf")

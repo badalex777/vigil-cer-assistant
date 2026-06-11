@@ -53,5 +53,37 @@
     "Full text not available in English"
   ],
 
-  "profile_version": "1.0"
+  "track1_inclusion_criteria": [
+    "Human clinical study of NPWT or a named equivalent/comparator device (RCT, controlled/cohort study, prospective or retrospective series with >=10 patients, or a systematic review / meta-analysis that pools such studies)",
+    "Reports clinical performance, effectiveness, or safety outcomes of NPWT in an indication within the device's intended purpose",
+    "Published within the protocol date range",
+    "English language full text obtainable"
+  ],
+  "track1_exclusion_criteria": [
+    "Animal or in vitro studies only",
+    "Narrative/non-systematic reviews, editorials, letters, or conference abstracts that report no primary or pooled outcome data",
+    "Indication outside the device's intended purpose",
+    "NPWT mentioned only incidentally and not reported as a study endpoint",
+    "Individual case reports or series with fewer than 10 patients",
+    "Full text not available in English"
+  ],
+
+  "track2_inclusion_criteria": [
+    "Characterises the standard of care, the available therapeutic/management/diagnostic ALTERNATIVES, or benchmark clinical outcomes for the relevant medical condition(s) (MEDDEV 2.7/1 rev 4, Appendix A4)",
+    "Clinical practice guidelines, consensus or position statements from professional medical associations ARE eligible",
+    "Systematic reviews, meta-analyses, and health technology assessment (HTA) reviews on the management of the condition(s) ARE eligible",
+    "Applicable standards and guidance documents on the condition or its treatment ARE eligible",
+    "Primary clinical studies that define current treatment outcomes or alternatives for the condition are also eligible",
+    "Published within the protocol date range; English language"
+  ],
+  "track2_exclusion_criteria": [
+    "Not about the relevant medical condition(s) or therapeutic area",
+    "Addresses only a contributing or background factor (e.g. nutrition, general epidemiology, cost/economic burden, basic pathophysiology) WITHOUT characterising the standard of care, treatment, or management options",
+    "Animal or in vitro studies only",
+    "Individual case reports or very small series with no generalisable contribution to the state of the art",
+    "Bench/materials-science or device-engineering papers with no clinical relevance to standard of care",
+    "Full text not available in English"
+  ],
+
+  "profile_version": "1.2"
 }

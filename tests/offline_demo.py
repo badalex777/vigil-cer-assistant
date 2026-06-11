@@ -132,7 +132,7 @@ def fake_call_text(model, system, user, max_tokens):
             "## 4. Papers flagged appraisal incomplete\n[none]\n\n"
             "## 5. Post-market signals\n[none]\n\n"
             "## 6. Human-only sections\n"
-            "[PRRC TO COMPLETE: Demonstration of equivalence — MEDDEV Appendix A1.]\n")
+            "[PRRC TO COMPLETE: Demonstration of equivalence - MEDDEV Appendix A1.]\n")
 
 def main():
     pubmed.run_track = fake_run_track
@@ -151,7 +151,7 @@ def main():
 
     print("PHASE A (search + screen + retrieve + VERIFY + auto-appraise)")
     a = pipeline.run_search_and_screen(prof, db_path=db_path, retmax=10,
-                                       progress=lambda s: print("  •", s))
+                                       progress=lambda s: print("  *", s))
     # 001 -> PMC, identity verified, auto-appraised.
     # 002 -> no OA (manual). 004 -> Unpaywall returned WRONG paper, verification
     #         FAILED, so it is NOT appraised and is routed to manual.
@@ -164,9 +164,9 @@ def main():
     assert rec004["verification_result"] == "mismatch", rec004["verification_result"]
     print(f"  auto-appraised: {a['counts']['included']} | manual: {manual_pmids}")
     print(f"  PMID 30000004 verification: {rec004['verification_result']} "
-          f"(score {rec004['verification_score']}) -> blocked from appraisal ✓")
+          f"(score {rec004['verification_score']}) -> blocked from appraisal OK")
 
-    print("PHASE B (PRRC uploads the two residual papers — with CORRECT PDFs)")
+    print("PHASE B (PRRC uploads the two residual papers - with CORRECT PDFs)")
     pdf_002 = _make_pdf(["Portable NPWT in surgical wound dehiscence: prospective cohort",
                          "Int Wound J 2021. doi:10.1000/iwj.2021.002"])
     pdf_004 = _make_pdf(["NPWT in pressure ulcers: a randomised study",
@@ -174,7 +174,7 @@ def main():
     b = pipeline.run_fulltext_appraisal(
         prof, a["run_id"], {"30000002": pdf_002, "30000004": pdf_004},
         db_path=db_path, duplicates=a["_duplicates"], queries=a["queries"],
-        progress=lambda s: print("  •", s))
+        progress=lambda s: print("  *", s))
     assert b["counts"]["included"] == 3, b["counts"]
     assert len(b["manual_upload_list"]) == 0, b["manual_upload_list"]
     assert "PMC OA" in b["search_report"], "report should record PMC as a source"

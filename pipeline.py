@@ -1,5 +1,5 @@
 """
-Vigil — CER Literature Review Assistant pipeline orchestrator (two-phase).
+Vigil - CER Literature Review Assistant pipeline orchestrator (two-phase).
 
 Phase A  (run_search_and_screen):
     Device Profile -> two-track PubMed search -> dedup -> abstract screen ->

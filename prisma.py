@@ -1,9 +1,9 @@
 """
-Vigil — PRISMA 2020 flow diagram (databases & registers only variant).
+Vigil - PRISMA 2020 flow diagram (databases & registers only variant).
 
 PRISMA 2020 = the reporting standard for systematic reviews. The flow diagram is
-a credibility differentiator for the search report (Pipeline Spec §10.3). Every
-count is a byproduct of the pipeline — zero extra effort.
+a credibility differentiator for the search report (Pipeline Spec ?10.3). Every
+count is a byproduct of the pipeline - zero extra effort.
 
 Template: "PRISMA 2020 flow diagram for new systematic reviews which included
 searches of databases and registers only" (CC BY 4.0).

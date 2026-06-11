@@ -1,5 +1,5 @@
 """
-Unit test for verify.py — runs on REAL PDF bytes (generated with reportlab),
+Unit test for verify.py - runs on REAL PDF bytes (generated with reportlab),
 not mocks. Proves the deterministic identity gate actually works.
 
 Run:  python tests/test_verify.py
@@ -41,7 +41,7 @@ def test_doi_match_passes():
     ])
     v = verify.verdict_for(REC_A, {"kind": "pdf", "pdf_bytes": pdf})
     assert v["result"] == "verified_doi", v
-    print("  ✓ correct paper, DOI printed -> verified_doi")
+    print("  OK correct paper, DOI printed -> verified_doi")
 
 
 def test_wrong_paper_rejected():
@@ -53,7 +53,7 @@ def test_wrong_paper_rejected():
     ])
     v = verify.verdict_for(REC_A, {"kind": "pdf", "pdf_bytes": pdf})
     assert v["result"] == "mismatch", v
-    print(f"  ✓ wrong paper rejected -> mismatch (score {v['score']})")
+    print(f"  OK wrong paper rejected -> mismatch (score {v['score']})")
 
 
 def test_title_fallback_no_doi():
@@ -65,14 +65,14 @@ def test_title_fallback_no_doi():
     ])
     v = verify.verdict_for(REC_A, {"kind": "pdf", "pdf_bytes": pdf})
     assert v["result"] in ("verified_title", "verified_doi"), v
-    print(f"  ✓ no DOI, title present -> {v['result']} (score {v['score']})")
+    print(f"  OK no DOI, title present -> {v['result']} (score {v['score']})")
 
 
 def test_unverifiable_empty():
     pdf = make_pdf([" "])  # essentially no extractable identifiers
     v = verify.verdict_for(REC_A, {"kind": "pdf", "pdf_bytes": pdf})
     assert v["result"] == "unverifiable", v
-    print(f"  ✓ no identifiers -> {v['result']}")
+    print(f"  OK no identifiers -> {v['result']}")
 
 
 def test_pmc_structured():
@@ -85,7 +85,7 @@ def test_pmc_structured():
         "kind": "xml_text", "found_doi": "10.1000/other.2020.555",
         "found_title": REC_B["title"], "text": "full text body ..."})
     assert bad["result"] == "mismatch", bad
-    print("  ✓ PMC structured ids: right->verified_doi, wrong->mismatch")
+    print("  OK PMC structured ids: right->verified_doi, wrong->mismatch")
 
 
 def main():

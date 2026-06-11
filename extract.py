@@ -1,4 +1,4 @@
-"""Vigil — Stage: adverse-event / performance extraction (abstract-level, V1)."""
+"""Vigil - Stage: adverse-event / performance extraction (abstract-level, V1)."""
 from __future__ import annotations
 import json
 
@@ -27,8 +27,8 @@ def extract_record(profile, rec, call=None) -> tuple[dict, str]:
                 "appraisal_incomplete")
     result.setdefault("pmid", rec["pmid"])
     result["track"] = rec["track"]
-    # Abstract-level extraction is, by MEDDEV §9.3 definition, an INCOMPLETE
-    # appraisal — the full text has not been reviewed. It stays flagged until a
+    # Abstract-level extraction is, by MEDDEV ?9.3 definition, an INCOMPLETE
+    # appraisal - the full text has not been reviewed. It stays flagged until a
     # full-text PDF is uploaded and appraised (Phase B). This is intentional.
     return result, "appraisal_incomplete"
 

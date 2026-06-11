@@ -12,7 +12,16 @@ RULES
 DEVICE PROFILE (scope)
 Device: {device_name}
 Intended purpose: {intended_purpose}
-Search track: {track}   (device_specific = about this device/comparator; state_of_art = about the condition/technology in general)
+Search track: {track}
+
+The two tracks answer different questions and accept different evidence (MEDDEV 2.7/1 rev 4):
+- device_specific: clinical evidence ABOUT this device or an equivalent/comparator.
+  The evidence base is primary clinical studies of the device.
+- state_of_art: the current standard of care for the medical condition/technology in
+  general. Per MEDDEV Appendix A4, the evidence base here legitimately INCLUDES
+  clinical practice guidelines, consensus/position statements, systematic reviews,
+  meta-analyses, and HTA reviews — these are not "low-quality" here, they define the
+  state of the art. Apply the criteria below, which already reflect this track.
 
 INCLUSION CRITERIA
 {inclusion_criteria}

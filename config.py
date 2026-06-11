@@ -1,5 +1,5 @@
 """
-Vigil — central configuration.
+Vigil - central configuration.
 
 All tunable constants live here so model choices, rate limits, and date ranges
 are changed in ONE place. Per architecture: prompt templates are external/versioned
@@ -8,7 +8,7 @@ are changed in ONE place. Per architecture: prompt templates are external/versio
 import os
 
 # --- Anthropic models (current public strings, June 2026) ---------------------
-# Rationale (Vigil Pipeline Spec §16):
+# Rationale (Vigil Pipeline Spec ?16):
 #   - Bulk abstract screening: high volume, lower per-item stakes -> faster/cheaper Sonnet.
 #   - Abstract-level extraction: PRELIMINARY pass, overwritten by full-text appraisal
 #     where a paper is retrieved -> Sonnet (cost-conscious; this result only persists
@@ -41,11 +41,11 @@ NCBI_RATE_DELAY = 0.34 if NCBI_API_KEY else 0.11  # seconds between calls (with/
 # values above are intentionally conservative. Swap if you hit rate limits.
 
 # --- Auto full-text retrieval (open access only) ------------------------------
-# Tier 1: PMC (PubMed Central) open-access — full text via NCBI itself.
-# Tier 2: Unpaywall — given a DOI, returns a LEGAL open-access PDF location if one
+# Tier 1: PMC (PubMed Central) open-access - full text via NCBI itself.
+# Tier 2: Unpaywall - given a DOI, returns a LEGAL open-access PDF location if one
 #         exists. Free; requires an email. https://unpaywall.org/products/api
 # Tier 3 (no OA found): routed to the PRRC manual-upload list. Vigil never bypasses
-#         a paywall — the PRRC supplies files they are entitled to.
+#         a paywall - the PRRC supplies files they are entitled to.
 ENABLE_AUTO_RETRIEVAL = os.getenv("VIGIL_AUTO_RETRIEVAL", "1") == "1"
 UNPAYWALL_BASE  = "https://api.unpaywall.org/v2"
 UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL", NCBI_EMAIL)
@@ -56,6 +56,11 @@ HTTP_TIMEOUT = 45
 
 # --- Run defaults -------------------------------------------------------------
 DEFAULT_RETMAX_PER_TRACK = 30   # demo target: ~20-30 papers/track
+# PubMed result ordering. "relevance" = Best Match (recommended: surfaces papers
+# the query is centrally about). Alternatives: "pub_date" (most recent first).
+# For a real CER you also want retmax high enough to retrieve results
+# comprehensively, not just a top-N sample - see README "Real-use vs demo".
+PUBMED_SORT = os.getenv("VIGIL_PUBMED_SORT", "relevance")
 DB_PATH = os.getenv("VIGIL_DB", "vigil.db")
 
 # --- Prompt template versions (external, versioned) ---------------------------

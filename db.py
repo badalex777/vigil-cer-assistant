@@ -1,7 +1,7 @@
 """
-Vigil — SQLite persistence (prototype).
+Vigil - SQLite persistence (prototype).
 
-Pipeline Spec §15: SQLite is fine for the prototype (Postgres + pgvector later).
+Pipeline Spec ?15: SQLite is fine for the prototype (Postgres + pgvector later).
 Tables mirror the spec's data model:
   - records        : every retrieved paper, per track, with screen + extraction state
   - outputs        : versioned generated documents (search report, CER draft, PRISMA)
@@ -188,7 +188,7 @@ def set_fulltext_appraisal(db_path, run_id, pmid, appraisal: dict, status="compl
 
 
 def retrieval_list(db_path, run_id):
-    """Included papers and their current retrieval/appraisal state — the list the
+    """Included papers and their current retrieval/appraisal state - the list the
     PRRC works through, uploading full text for each."""
     return get_records(db_path, run_id, "screen_verdict='include'")
 

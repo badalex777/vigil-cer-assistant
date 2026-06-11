@@ -1,5 +1,5 @@
 """
-Vigil — PubMed / NCBI E-utilities client.
+Vigil - PubMed / NCBI E-utilities client.
 
 Two-track search (MEDDEV 2.7/1 rev 4, mandatory and separate):
   Track 1 (device_specific): device name + synonyms + comparator/equivalent devices.
@@ -9,7 +9,7 @@ The two tracks are run and DOCUMENTED separately. This module only RETRIEVES and
 parses; it makes no relevance judgment (that's screen.py).
 
 E-utilities reference: https://www.ncbi.nlm.nih.gov/books/NBK25501/
-This logic must be correct — the search strategy is a regulatory artifact recorded
+This logic must be correct - the search strategy is a regulatory artifact recorded
 verbatim in the search report.
 """
 from __future__ import annotations
@@ -49,13 +49,13 @@ def build_track_queries(profile) -> dict[str, str]:
     if profile.languages:
         lang_filter = "(" + " OR ".join(f"{l}[lang]" for l in profile.languages) + ")"
 
-    # Track 1 — device-specific
+    # Track 1 - device-specific
     t1_device = _or_block(profile.device_synonyms + [profile.device_name])
     t1_comp = _or_block(profile.comparator_devices)
     t1_core = t1_device if not t1_comp else f"({t1_device} OR {t1_comp})"
     track1 = " AND ".join(p for p in [t1_core, date_filter, lang_filter] if p)
 
-    # Track 2 — state of the art (condition + technology + therapeutic area)
+    # Track 2 - state of the art (condition + technology + therapeutic area)
     t2_cond = _or_block(profile.medical_condition)
     t2_tech = _or_block(profile.technology_category)
     t2_ta = _or_block(profile.therapeutic_area)
@@ -72,8 +72,13 @@ def build_track_queries(profile) -> dict[str, str]:
 
 
 def esearch(query: str, retmax: int) -> list[str]:
+    # sort=relevance uses PubMed's "Best Match" ranking, which weights how CENTRAL
+    # the search terms are to each paper. Without it, E-utilities returns
+    # most-recent-first, which buries the foundational literature under recent
+    # case reports and papers that only mention the device incidentally.
     xml = _eutils_get("esearch.fcgi", {
         "db": "pubmed", "term": query, "retmax": retmax, "retmode": "xml",
+        "sort": config.PUBMED_SORT,
     })
     root = ET.fromstring(xml)
     return [e.text for e in root.findall(".//IdList/Id")]

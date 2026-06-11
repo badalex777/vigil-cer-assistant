@@ -1,4 +1,4 @@
-"""Vigil — Stage: abstract relevance screening."""
+"""Vigil - Stage: abstract relevance screening."""
 from __future__ import annotations
 
 import config
@@ -10,12 +10,13 @@ _SYSTEM = "You output only valid JSON. No markdown, no preamble."
 
 def _fmt(profile, rec) -> str:
     tmpl = load_prompt(config.PROMPT_SCREEN)
+    inclusion, exclusion = profile.criteria_for_track(rec["track"])
     return tmpl.format(
         device_name=profile.device_name,
         intended_purpose=profile.intended_purpose,
         track=rec["track"],
-        inclusion_criteria="\n".join(f"- {c}" for c in profile.inclusion_criteria),
-        exclusion_criteria="\n".join(f"- {c}" for c in profile.exclusion_criteria),
+        inclusion_criteria="\n".join(f"- {c}" for c in inclusion),
+        exclusion_criteria="\n".join(f"- {c}" for c in exclusion),
         pmid=rec["pmid"],
         title=rec.get("title", ""),
         abstract=rec.get("abstract", "") or "[no abstract available]",

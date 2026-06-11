@@ -1,7 +1,7 @@
 """
-Vigil — Anthropic LLM wrapper.
+Vigil - Anthropic LLM wrapper.
 
-Guardrail enforcement at the call level (Pipeline Spec §2.2, guardrail 4):
+Guardrail enforcement at the call level (Pipeline Spec ?2.2, guardrail 4):
   - Structured JSON output only.
   - Prompts are EXTERNAL and versioned (loaded from prompts/), never hardcoded.
   - "If unknown, say unknown" is instructed in every prompt template.
@@ -81,7 +81,7 @@ def call_json(model: str, system: str, user: str, max_tokens: int) -> dict:
 def call_json_pdf(model: str, system: str, user: str, pdf_bytes: bytes,
                   max_tokens: int) -> dict:
     """Call Claude with a PDF sent NATIVELY as a document block (preserves tables
-    and layout — where adverse-event/performance data lives). Expects JSON back.
+    and layout - where adverse-event/performance data lives). Expects JSON back.
 
     Used for full-text appraisal. Fails safe to a parse-error object.
     """

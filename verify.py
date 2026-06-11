@@ -1,24 +1,24 @@
 """
-Vigil — full-text identity verification.
+Vigil - full-text identity verification.
 
 Before an auto-retrieved full text is appraised, confirm it is actually the paper
 we think it is. A mismatched document appraised and recorded as evidence for the
 wrong PMID is a silent, expensive error in a regulated CER. This is the guard.
 
 Two signals, deterministic (no LLM judgment):
-  1. DOI match (strongest) — DOIs are unique identifiers. If the record's DOI is
+  1. DOI match (strongest) - DOIs are unique identifiers. If the record's DOI is
      present in the document (PMC article-meta, or printed in the PDF text), the
      identity is confirmed.
-  2. Title similarity (fallback) — when no DOI is printed (common in older author
+  2. Title similarity (fallback) - when no DOI is printed (common in older author
      manuscripts), compare the document's title / first-page text to the record
      title via sequence ratio + distinctive-token overlap.
 
 Verdicts:
-  'verified_doi'   DOI confirmed — appraise.
-  'verified_title' high title match, no DOI — appraise.
-  'uncertain'      partial match — DO NOT auto-appraise; route to manual.
-  'mismatch'       no DOI match and title differs — DO NOT appraise; route to manual.
-  'unverifiable'   no extractable identifiers (e.g. scanned PDF) — route to manual.
+  'verified_doi'   DOI confirmed - appraise.
+  'verified_title' high title match, no DOI - appraise.
+  'uncertain'      partial match - DO NOT auto-appraise; route to manual.
+  'mismatch'       no DOI match and title differs - DO NOT appraise; route to manual.
+  'unverifiable'   no extractable identifiers (e.g. scanned PDF) - route to manual.
 
 Hard gate for AUTO-retrieved papers (no human in the loop). For PRRC uploads the
 verdict is recorded as a soft check (the human chose the file) but surfaced if it
@@ -34,7 +34,7 @@ DOI_RE = re.compile(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+', re.IGNORECASE)
 
 VERIFIED = {"verified_doi", "verified_title"}
 
-# Thresholds (tuned conservatively — prefer routing to manual over a false pass).
+# Thresholds (tuned conservatively - prefer routing to manual over a false pass).
 TITLE_VERIFIED = 0.85
 TITLE_UNCERTAIN = 0.55
 
@@ -116,7 +116,7 @@ def verify(record: dict, found: dict) -> dict:
     rec_title = record.get("title")
     text = (found.get("text_head") or "")
 
-    # 1. DOI — strongest signal.
+    # 1. DOI - strongest signal.
     found_doi = normalize_doi(found.get("doi"))
     if rec_doi and found_doi and found_doi == rec_doi:
         return {"result": "verified_doi", "score": 1.0,
@@ -125,7 +125,7 @@ def verify(record: dict, found: dict) -> dict:
         return {"result": "verified_doi", "score": 1.0,
                 "reason": "record DOI found in document text"}
 
-    # 2. Title similarity — for documents that don't print a DOI.
+    # 2. Title similarity - for documents that don't print a DOI.
     # Embedded PDF metadata titles are often junk ("untitled", "Microsoft Word - ...",
     # "Layout 1"), so only trust them when they look like a real title AND the
     # document text was actually extractable.

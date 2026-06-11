@@ -1,13 +1,13 @@
 """
-Vigil — CER Literature Review Assistant · demo UI (Streamlit), two-phase.
+Vigil - CER Literature Review Assistant ? demo UI (Streamlit), two-phase.
 
 Run:  streamlit run app.py
 Env:  ANTHROPIC_API_KEY  (required), NCBI_API_KEY / NCBI_EMAIL (optional)
 
 Demo arc (Goal 2):
-  Phase A — device profile in -> two-track PubMed search -> screen -> retrieval list
+  Phase A - device profile in -> two-track PubMed search -> screen -> retrieval list
             (every included paper flagged 'appraisal incomplete').
-  Phase B — PRRC uploads full-text PDFs for paywalled / hard-to-reach papers ->
+  Phase B - PRRC uploads full-text PDFs for paywalled / hard-to-reach papers ->
             full-text MEDDEV A6 appraisal -> papers upgrade to fully appraised,
             PRISMA + draft regenerate live. THIS is the value moment to show.
 """
@@ -17,9 +17,9 @@ import streamlit as st
 from device_profile import DeviceProfile
 import pipeline
 
-st.set_page_config(page_title="Vigil — CER Assistant", layout="wide")
-st.title("Vigil · CER Literature Review Assistant")
-st.caption("AI-assisted EU MDR clinical evaluation · MEDDEV 2.7/1 rev 4 · PRISMA 2020 · "
+st.set_page_config(page_title="Vigil - CER Assistant", layout="wide")
+st.title("Vigil ? CER Literature Review Assistant")
+st.caption("AI-assisted EU MDR clinical evaluation ? MEDDEV 2.7/1 rev 4 ? PRISMA 2020 ? "
            "first-draft only, PRRC reviews & signs")
 
 ss = st.session_state
@@ -30,19 +30,19 @@ with st.sidebar:
     chosen = st.selectbox("Load a device profile", devices)
     profile = DeviceProfile.from_json(os.path.join("devices", chosen))
     st.write(f"**{profile.device_name}**")
-    st.write(f"Class {profile.classification} · {profile.classification_rule}")
+    st.write(f"Class {profile.classification} ? {profile.classification_rule}")
     st.write(f"Scope hash: `{profile.run_scope_hash()}`")
     retmax = st.slider("Papers per track (demo)", 5, 50, 30)
     if not os.getenv("ANTHROPIC_API_KEY"):
-        st.warning("ANTHROPIC_API_KEY not set — Claude steps will fail.")
+        st.warning("ANTHROPIC_API_KEY not set - Claude steps will fail.")
     st.divider()
-    if st.button("① Search, screen & auto-appraise", type="primary",
+    if st.button("? Search, screen & auto-appraise", type="primary",
                  use_container_width=True):
         logs = []
         box = st.empty()
         def prog(m):
             logs.append(m); box.code("\n".join(logs))
-        with st.spinner("Phase A…"):
+        with st.spinner("Phase A..."):
             ss.result = pipeline.run_search_and_screen(
                 profile, retmax=retmax, progress=prog)
             ss.profile = profile
@@ -57,7 +57,7 @@ st.markdown("> **Guardrail:** Vigil produces a structured, fully-cited *first dr
             "placeholders. The system describes evidence; it never concludes.")
 
 if "result" not in ss:
-    st.info("Load a device profile and click **① Search, screen & auto-appraise**.")
+    st.info("Load a device profile and click **? Search, screen & auto-appraise**.")
     st.stop()
 
 r = ss.result
@@ -77,13 +77,13 @@ cols[4].metric("Need manual upload", len(manual))
 
 if n_pmc + n_uw:
     st.success(f"Auto-retrieved & appraised {n_pmc + n_uw} paper(s) from open access "
-               f"(PMC {n_pmc}, Unpaywall {n_uw}) — no manual work required for these.")
+               f"(PMC {n_pmc}, Unpaywall {n_uw}) - no manual work required for these.")
 
 # ---- Phase B: residual manual upload only ----------------------------------
-st.subheader("② Manual full-text upload (residual only)")
+st.subheader("? Manual full-text upload (residual only)")
 st.caption("Vigil already fetched and appraised every paper with a legal open-access "
            "copy. Only the papers below have no open-access full text. Upload the PDF "
-           "for each (you supply files you're entitled to — Vigil never bypasses a "
+           "for each (you supply files you're entitled to - Vigil never bypasses a "
            "paywall). Each upload gets a full MEDDEV Appendix A6 appraisal.")
 
 if manual:
@@ -92,16 +92,16 @@ if manual:
         files = {}
         for x in manual:
             if x.get("retrieval_source") == "auto_unverified":
-                why = (f"`open-access copy found but UNVERIFIED` — "
+                why = (f"`open-access copy found but UNVERIFIED` - "
                        f"{x.get('verification_reason','identity not confirmed')}")
             else:
                 why = "`no open-access copy found`"
-            st.markdown(f"{why} · **PMID {x['pmid']}** — "
+            st.markdown(f"{why} ? **PMID {x['pmid']}** - "
                         f"{x['title']} ({x.get('journal','')}, {x.get('year','')})")
             files[x["pmid"]] = st.file_uploader(
                 f"Full-text PDF for PMID {x['pmid']}", type=["pdf"],
                 key=f"up_{x['pmid']}", label_visibility="collapsed")
-        go = st.form_submit_button("③ Appraise uploaded papers", type="primary")
+        go = st.form_submit_button("? Appraise uploaded papers", type="primary")
     if go:
         uploads = {pmid: f.read() for pmid, f in files.items() if f is not None}
         if not uploads:
@@ -110,14 +110,14 @@ if manual:
             logs = []; box = st.empty()
             def prog(m):
                 logs.append(m); box.code("\n".join(logs))
-            with st.spinner("Full-text appraisal…"):
+            with st.spinner("Full-text appraisal..."):
                 ss.result = pipeline.run_fulltext_appraisal(
                     ss.profile, r["run_id"], uploads,
                     duplicates=r.get("_duplicates", 0), queries=r["queries"],
                     progress=prog)
             st.rerun()
 else:
-    st.info("Every included paper was retrieved automatically — no manual upload needed.")
+    st.info("Every included paper was retrieved automatically - no manual upload needed.")
 
 # ---- Outputs --------------------------------------------------------------
 st.subheader("Outputs")
@@ -136,6 +136,6 @@ with tab3:
     st.download_button("Download CER draft (.md)", r["cer_section"],
                        "cer_draft_section.md")
 
-with st.expander("Search queries (verbatim — recorded in the report)"):
+with st.expander("Search queries (verbatim - recorded in the report)"):
     st.code("Track 1 (device-specific):\n" + r["queries"]["device_specific"]
             + "\n\nTrack 2 (state of the art):\n" + r["queries"]["state_of_art"])
