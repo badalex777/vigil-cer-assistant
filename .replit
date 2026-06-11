@@ -1,51 +1,23 @@
+# Tells Replit how to run Vigil. The 'run' button launches the Streamlit demo UI.
 run = "streamlit run app.py --server.port 8080 --server.address 0.0.0.0 --server.headless true"
+
+# Python 3 environment
 modules = ["python-3.12"]
 
 [nix]
-channel = "stable-25_05"
+channel = "stable-24_05"
 
 [[ports]]
 localPort = 5000
-externalPort = 80
+externalPort = 5000
 
 [[ports]]
 localPort = 8080
 externalPort = 80
 
 [env]
+# Streamlit writes its config here; harmless default.
 PYTHONUNBUFFERED = "1"
-
-[userenv]
-
-[userenv.shared]
-ANTHROPIC_API_KEY = "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"
-NCBI_API_KEY = "f76b98030b43d305851b94a22271bcc65707"
-NCBI_EMAIL = "alejandromadridmalo@gmail.com,"
-UNPAYWALL_EMAIL = "alejandromadridmalo@gmail.com"
 
 [agent]
 expertMode = true
-
-[workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Start application"
-
-[[workflows.workflow]]
-name = "Start application"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "streamlit run app.py"
-waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
