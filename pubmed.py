@@ -49,9 +49,23 @@ def build_track_queries(profile) -> dict[str, str]:
     if profile.languages:
         lang_filter = "(" + " OR ".join(f"{l}[lang]" for l in profile.languages) + ")"
 
-    # Track 1 - device-specific
+    # Track 1 - device-specific.
+    # Comparator/equivalent device names come from TWO sources, merged:
+    #   1. comparator_devices (legacy free list, kept for backward compatibility)
+    #   2. the equivalence register (equivalent_device_names()) - the structured,
+    #      MDCG-2020-5 record. Equivalence drives the search: the literature on a
+    #      claimed equivalent device is device-specific (Track 1) evidence.
+    # Dedup while preserving order so the recorded query is stable/auditable.
+    eq_names = []
+    if hasattr(profile, "equivalent_device_names"):
+        eq_names = profile.equivalent_device_names()
+    comparators = list(profile.comparator_devices)
+    for n in eq_names:
+        if n not in comparators:
+            comparators.append(n)
+
     t1_device = _or_block(profile.device_synonyms + [profile.device_name])
-    t1_comp = _or_block(profile.comparator_devices)
+    t1_comp = _or_block(comparators)
     t1_core = t1_device if not t1_comp else f"({t1_device} OR {t1_comp})"
     track1 = " AND ".join(p for p in [t1_core, date_filter, lang_filter] if p)
 
@@ -69,6 +83,31 @@ def build_track_queries(profile) -> dict[str, str]:
     track2 = " AND ".join(p for p in [t2_core, date_filter, lang_filter] if p)
 
     return {"device_specific": track1, "state_of_art": track2}
+
+
+def esearch_count(query: str) -> int:
+    """Return ONLY the number of PubMed hits for a query - no PMIDs downloaded,
+    no LLM, no appraisal. This is the cost-control preview the PRRC sees BEFORE
+    approving the search and spending money on screening/appraisal.
+
+    Uses rettype=count so NCBI returns just the <Count> element."""
+    xml = _eutils_get("esearch.fcgi", {
+        "db": "pubmed", "term": query, "rettype": "count", "retmode": "xml",
+    })
+    root = ET.fromstring(xml)
+    count_text = root.findtext(".//Count")
+    return int(count_text) if count_text and count_text.isdigit() else 0
+
+
+def count_preview(profile) -> dict:
+    """Per-track hit counts for the approval gate. Free (no LLM, no fetch).
+    Returns {'device_specific': n, 'state_of_art': m, 'queries': {...}}."""
+    queries = build_track_queries(profile)
+    return {
+        "device_specific": esearch_count(queries["device_specific"]),
+        "state_of_art": esearch_count(queries["state_of_art"]),
+        "queries": queries,
+    }
 
 
 def esearch(query: str, retmax: int) -> list[str]:

@@ -7,10 +7,7 @@ modules = ["python-3.12"]
 [nix]
 channel = "stable-24_05"
 
-[[ports]]
-localPort = 5000
-externalPort = 5000
-
+# Expose Streamlit's port to the web preview
 [[ports]]
 localPort = 8080
 externalPort = 80
@@ -18,6 +15,3 @@ externalPort = 80
 [env]
 # Streamlit writes its config here; harmless default.
 PYTHONUNBUFFERED = "1"
-
-[agent]
-expertMode = true

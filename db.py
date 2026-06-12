@@ -80,7 +80,42 @@ CREATE TABLE IF NOT EXISTS run_log (
     stage    TEXT NOT NULL,
     message  TEXT
 );
+
+-- Run lifecycle state machine (Block 2). One row per run.
+-- States: draft -> strings_approved -> locked -> running -> phase_b -> complete
+-- Each transition stamps its own UTC timestamp column for the audit trail.
+-- approved_queries_json holds the search strings VERBATIM as the PRRC approved
+-- them (the Literature Search Protocol crystallizes from this). locked_scope_hash
+-- + locked_at prove the scope was frozen before any comprehensive search ran.
+CREATE TABLE IF NOT EXISTS run_state (
+    run_id                TEXT PRIMARY KEY,
+    state                 TEXT NOT NULL,        -- current lifecycle state
+    approved_queries_json TEXT,                 -- frozen search strings (verbatim)
+    locked_scope_hash     TEXT,                 -- scope_hash stamped at lock
+    actor                 TEXT,                 -- who performed the last transition
+    created_at            REAL,
+    approved_at           REAL,
+    locked_at             REAL,
+    running_at            REAL,
+    phase_b_at            REAL,
+    complete_at           REAL
+);
 """
+
+# Allowed forward transitions of the run state machine. Any other transition is
+# refused (protects audit integrity: you cannot edit scope after lock, and you
+# cannot skip the approval gate).
+_STATE_ORDER = ["draft", "strings_approved", "locked", "running",
+                "phase_b", "complete"]
+_TS_COLUMN = {
+    "draft": "created_at", "strings_approved": "approved_at",
+    "locked": "locked_at", "running": "running_at",
+    "phase_b": "phase_b_at", "complete": "complete_at",
+}
+
+
+class StateError(Exception):
+    """Raised when a state transition or a post-lock edit is not permitted."""
 
 
 @contextmanager
@@ -230,3 +265,111 @@ def get_cer_relevant_signals(db_path, device_name):
         return [dict(r) for r in c.execute(
             "SELECT * FROM signals WHERE device_name=? AND cer_relevance='relevant'",
             (device_name,)).fetchall()]
+
+
+# --- Run state machine (Block 2) ---------------------------------------------
+
+def init_run_state(db_path, run_id, actor=""):
+    """Create the state row for a run in 'draft'. Idempotent: if it already
+    exists, leaves it untouched (so re-opening a draft doesn't reset it)."""
+    with connect(db_path) as c:
+        exists = c.execute("SELECT 1 FROM run_state WHERE run_id=?",
+                            (run_id,)).fetchone()
+        if not exists:
+            c.execute(
+                "INSERT INTO run_state (run_id, state, actor, created_at) "
+                "VALUES (?,?,?,?)", (run_id, "draft", actor, time.time()))
+
+
+def get_run_state(db_path, run_id):
+    """Return the state row as a dict, or None if not initialized."""
+    with connect(db_path) as c:
+        row = c.execute("SELECT * FROM run_state WHERE run_id=?",
+                        (run_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def current_state(db_path, run_id):
+    """Convenience: just the state string (or None)."""
+    st = get_run_state(db_path, run_id)
+    return st["state"] if st else None
+
+
+def is_locked(db_path, run_id):
+    """True once the run has reached 'locked' or beyond - scope is immutable."""
+    st = current_state(db_path, run_id)
+    if st is None:
+        return False
+    return _STATE_ORDER.index(st) >= _STATE_ORDER.index("locked")
+
+
+def require_editable(db_path, run_id):
+    """Guard for any operation that would change scope. Refuses (raises
+    StateError) once the run is locked. Call this before mutating the profile
+    or search strings for a run."""
+    if is_locked(db_path, run_id):
+        raise StateError(
+            f"Run {run_id} is locked; scope is immutable. "
+            "Start a new run to change scope (auditability requirement).")
+
+
+def _advance(db_path, run_id, target, actor=""):
+    """Move the run to `target`, allowing only the next forward state.
+    Stamps the target's timestamp column. Raises StateError on illegal moves."""
+    if target not in _STATE_ORDER:
+        raise StateError(f"Unknown state: {target}")
+    st = current_state(db_path, run_id)
+    if st is None:
+        raise StateError(f"Run {run_id} has no state row; call init_run_state first.")
+    cur_i, tgt_i = _STATE_ORDER.index(st), _STATE_ORDER.index(target)
+    if tgt_i != cur_i + 1:
+        raise StateError(
+            f"Illegal transition {st} -> {target}. "
+            f"Only forward-by-one transitions are allowed.")
+    ts_col = _TS_COLUMN[target]
+    with connect(db_path) as c:
+        c.execute(
+            f"UPDATE run_state SET state=?, actor=?, {ts_col}=? WHERE run_id=?",
+            (target, actor, time.time(), run_id))
+    log(db_path, run_id, "state", f"{st} -> {target}"
+        + (f" by {actor}" if actor else ""))
+
+
+def approve_strings(db_path, run_id, queries: dict, actor=""):
+    """PRRC approves the (possibly edited) search strings. Freezes them verbatim
+    and advances draft -> strings_approved. This is the search-strategy gate."""
+    require_editable(db_path, run_id)  # can only approve from an editable state
+    with connect(db_path) as c:
+        c.execute("UPDATE run_state SET approved_queries_json=? WHERE run_id=?",
+                  (json.dumps(queries), run_id))
+    _advance(db_path, run_id, "strings_approved", actor)
+
+
+def lock_run(db_path, run_id, scope_hash, actor=""):
+    """Start Research: stamp the scope_hash + lock timestamp and advance
+    strings_approved -> locked. After this, require_editable() refuses edits."""
+    with connect(db_path) as c:
+        c.execute("UPDATE run_state SET locked_scope_hash=? WHERE run_id=?",
+                  (scope_hash, run_id))
+    _advance(db_path, run_id, "locked", actor)
+
+
+def mark_running(db_path, run_id, actor=""):
+    _advance(db_path, run_id, "running", actor)
+
+
+def mark_phase_b(db_path, run_id, actor=""):
+    _advance(db_path, run_id, "phase_b", actor)
+
+
+def mark_complete(db_path, run_id, actor=""):
+    _advance(db_path, run_id, "complete", actor)
+
+
+def approved_queries(db_path, run_id):
+    """The frozen, PRRC-approved search strings (or None if not yet approved).
+    The Literature Search Protocol renders from these."""
+    st = get_run_state(db_path, run_id)
+    if st and st.get("approved_queries_json"):
+        return json.loads(st["approved_queries_json"])
+    return None

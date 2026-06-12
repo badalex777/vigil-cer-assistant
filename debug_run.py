@@ -11,6 +11,7 @@ Usage:
     python debug_run.py 15              # 15 papers/track
     python debug_run.py 10 --no-screen  # search only, no API cost (inspect titles)
     python debug_run.py 10 --abstracts  # print fuller abstracts
+    python debug_run.py --counts        # FREE: just the per-track hit counts, no fetch/screen
 
 What to look for in the output:
   - Titles mostly NOT about the device  -> the SEARCH is returning junk.
@@ -36,6 +37,7 @@ def main():
     retmax = 10
     do_screen = True
     show_abstracts = False
+    counts_only = False
     for arg in sys.argv[1:]:
         if arg.isdigit():
             retmax = int(arg)
@@ -43,6 +45,8 @@ def main():
             do_screen = False
         elif arg == "--abstracts":
             show_abstracts = True
+        elif arg == "--counts":
+            counts_only = True
 
     profile = DeviceProfile.from_json(DEVICE)
     queries = pubmed.build_track_queries(profile)
@@ -54,6 +58,23 @@ def main():
     print(queries["device_specific"])
     print("\n--- TRACK 2 QUERY (state of the art) ---")
     print(queries["state_of_art"])
+
+    # Count preview (free: no PMIDs downloaded, no LLM). This is what the PRRC
+    # sees at the approval gate before any money is spent on screening/appraisal.
+    print("\n--- COUNT PREVIEW (free; total PubMed hits per track) ---")
+    try:
+        t1_total = pubmed.esearch_count(queries["device_specific"])
+        t2_total = pubmed.esearch_count(queries["state_of_art"])
+        print(f"Track 1 (device-specific): {t1_total} total hits")
+        print(f"Track 2 (state of the art): {t2_total} total hits")
+        print(f"Combined (pre-dedup): {t1_total + t2_total} hits")
+        print(f"(This run will screen only the top {retmax}/track for diagnostics.)")
+    except Exception as e:
+        print(f"[count preview failed: {e}]")
+
+    if counts_only:
+        print("\n--counts flag set: stopping after the free count preview.")
+        return
 
     print("\nSearching PubMed (live)...")
     t1 = pubmed.run_track(queries["device_specific"], "device_specific", retmax)
