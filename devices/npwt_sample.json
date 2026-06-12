@@ -85,5 +85,55 @@
     "Full text not available in English"
   ],
 
-  "profile_version": "1.2"
+  "equivalence_claimed": true,
+  "equivalent_devices": [
+    {
+      "name": "VacuHeal Pro NPWT System",
+      "model": "VH-2000",
+      "manufacturer": "Fictional Wound Care GmbH",
+      "ce_marked": true,
+      "regulatory_status": "CE-marked under MDR 2017/745 (fictional, for demo). Certificate valid; based on an updated clinical evaluation.",
+      "relationship": "Other manufacturer, same device group (portable single-patient NPWT). Not a predecessor/successor of the device under evaluation.",
+      "technical_characteristics": "Similar design: battery-powered portable pump delivering controlled sub-atmospheric pressure via a sealed foam/film dressing. Pressure range -40 to -200 mmHg, continuous and intermittent modes, matching the device under evaluation. Same principle of operation (negative pressure applied to a sealed wound bed) and comparable critical performance (pressure accuracy +/- 10 mmHg, canister-based exudate management). Deployment method (adhesive drape + tubing + canister) is equivalent. PRRC to confirm software/control algorithm comparability against VacuHeal technical file.",
+      "biological_characteristics": "Patient-contacting materials (polyurethane foam dressing, acrylic adhesive drape, silicone-bordered interface) are of the same families and contact the same tissues (wound bed, peri-wound intact skin) for comparable durations. Biocompatibility assessed per ISO 10993-1. PRRC attests material equivalence pending review of VacuHeal material specifications; any difference in foam pore size to be evaluated for clinical significance.",
+      "clinical_characteristics": "Same clinical condition and indications (chronic, acute, traumatic, dehisced, surgically closed wounds; grafts and flaps), same intended purpose (promotion of wound healing via controlled negative pressure), same body sites, and same adult patient population. No clinically significant difference in expected clinical effect anticipated.",
+      "differences_and_justification": "Identified differences: (1) VacuHeal foam pore size specified at 400-600 micron vs device-under-evaluation 450-650 micron; (2) VacuHeal default intermittent cycle 5 min on / 2 min off vs 3 min on / 2 min off. PRRC justification: both pore ranges fall within the established therapeutic window for granulation tissue formation reported in the literature, and intermittent cycle timing is clinician-adjustable on both devices; therefore neither difference is expected to trigger a clinically significant difference in safety or performance. (PRRC rationale - to be confirmed against full technical comparison; Vigil does not assess this.)",
+      "technical_documentation_access": "Manufacturer has NO contractual access to VacuHeal's full technical documentation (different manufacturer). Equivalence rests on publicly available IFU, published literature, and the CE-marked status of VacuHeal. PRRC NOTE: per MDCG 2020-5, for a Class IIb non-implantable device a contract is not strictly required, but the manufacturer must demonstrate SUFFICIENT access to the data needed to substantiate the three characteristics. The PRRC must judge whether public-domain data is sufficient here, or whether equivalence cannot be claimed. THIS IS A PRRC DETERMINATION - Vigil only records the access level stated."
+    }
+  ],
+
+  "manufacturer_claims": [
+    {
+      "claim": "The device promotes healing of chronic wounds (diabetic foot ulcers, pressure ulcers, venous leg ulcers).",
+      "acceptance_criterion": "Published clinical evidence demonstrates wound closure / healing rates with NPWT at least comparable to standard-of-care moist wound dressings in the target indications."
+    },
+    {
+      "claim": "The device prepares the wound bed for skin grafting.",
+      "acceptance_criterion": "Evidence shows improved granulation tissue formation and graft take rates with NPWT versus conventional dressings prior to grafting."
+    },
+    {
+      "claim": "The device has an acceptable safety profile in adult wound-care patients.",
+      "acceptance_criterion": "Reported adverse events (bleeding, infection, pain, maceration) are within the range established for NPWT in the state-of-the-art literature, with no new or unexpected hazards."
+    }
+  ],
+
+  "pico_population": "Adult patients with chronic, acute, traumatic, dehisced, or surgically closed wounds, including diabetic foot ulcers, pressure ulcers, and venous leg ulcers; and patients requiring wound-bed preparation for skin grafts or flaps.",
+  "pico_intervention": "Negative pressure wound therapy (NPWT) delivering controlled sub-atmospheric pressure (-40 to -200 mmHg) via a sealed wound dressing.",
+  "pico_comparator": "Standard-of-care moist wound dressings (e.g. alginate, foam, hydrocolloid); wet-to-dry dressings; other NPWT systems.",
+  "pico_outcomes": "Complete wound closure rate; time to healing; granulation tissue formation; wound area reduction; skin graft take rate; adverse events (infection, bleeding, pain, maceration); amputation rate (in diabetic foot ulcers).",
+
+  "relevant_gspr": [
+    "GSPR 1 (general safety and performance)",
+    "GSPR 8 (acceptable benefit-risk; clinical performance)",
+    "GSPR 9 (performance and safety characteristics)",
+    "GSPR 10.1 (clinical evaluation; clinical benefit)",
+    "GSPR 14 (devices in contact with the body; biocompatibility)",
+    "GSPR 23 (information supplied with the device; IFU/labelling)"
+  ],
+
+  "evaluator_name": "[PRRC name - to be completed by client]",
+  "evaluator_qualifications": "[Qualifications and relevant experience per MDR Annex XIV - to be completed by client]",
+  "declaration_of_interest_ref": "[Filename/reference of attached signed Declaration of Interest - not generated by Vigil]",
+
+  "profile_version": "2.0"
 }
