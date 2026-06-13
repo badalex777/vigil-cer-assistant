@@ -123,12 +123,9 @@ def esearch(query: str, retmax: int) -> list[str]:
     return [e.text for e in root.findall(".//IdList/Id")]
 
 
-def efetch(pmids: list[str]) -> list[dict]:
-    if not pmids:
-        return []
-    xml = _eutils_get("efetch.fcgi", {
-        "db": "pubmed", "id": ",".join(pmids), "retmode": "xml",
-    })
+def _parse_articles(xml: str) -> list[dict]:
+    """Parse a PubmedArticleSet XML into record dicts. Shared by efetch (by id)
+    and efetch_history (by WebEnv/QueryKey pagination)."""
     root = ET.fromstring(xml)
     out = []
     for art in root.findall(".//PubmedArticle"):
@@ -155,12 +152,88 @@ def efetch(pmids: list[str]) -> list[dict]:
     return out
 
 
+def efetch(pmids: list[str]) -> list[dict]:
+    if not pmids:
+        return []
+    xml = _eutils_get("efetch.fcgi", {
+        "db": "pubmed", "id": ",".join(pmids), "retmode": "xml",
+    })
+    return _parse_articles(xml)
+
+
 def run_track(query: str, track_name: str, retmax: int) -> list[dict]:
     pmids = esearch(query, retmax)
     records = efetch(pmids)
     for r in records:
         r["track"] = track_name
     return records
+
+
+def esearch_history(query: str) -> tuple[int, str, str]:
+    """esearch with usehistory=y. Returns (total_count, webenv, query_key).
+    The history server lets us page through ALL results without re-sending the
+    query each time - the PRISMA-faithful way to retrieve the full result set."""
+    xml = _eutils_get("esearch.fcgi", {
+        "db": "pubmed", "term": query, "retmax": 0, "retmode": "xml",
+        "usehistory": "y", "sort": config.PUBMED_SORT,
+    })
+    root = ET.fromstring(xml)
+    count = int(root.findtext(".//Count") or "0")
+    webenv = root.findtext(".//WebEnv") or ""
+    query_key = root.findtext(".//QueryKey") or ""
+    return count, webenv, query_key
+
+
+def efetch_history(webenv: str, query_key: str, retstart: int,
+                   retmax: int) -> list[dict]:
+    """Fetch one page of records from the history server."""
+    xml = _eutils_get("efetch.fcgi", {
+        "db": "pubmed", "WebEnv": webenv, "query_key": query_key,
+        "retstart": retstart, "retmax": retmax, "retmode": "xml",
+    })
+    return _parse_articles(xml)
+
+
+def run_track_comprehensive(query: str, track_name: str,
+                            max_hits: int | None = None,
+                            progress=lambda s: None) -> tuple[list[dict], dict]:
+    """Retrieve ALL hits for a track (up to max_hits), paginating via the NCBI
+    history server. Returns (records, meta) where meta records the total available,
+    how many were retrieved, whether the cap was hit, and the search date - all of
+    which go into the auditable search report.
+
+    This is the comprehensive path used for a real CER. The top-N run_track stays
+    for cheap diagnostics."""
+    import time as _time
+    max_hits = max_hits if max_hits is not None else config.MAX_HITS_PER_TRACK
+    total, webenv, query_key = esearch_history(query)
+    target = min(total, max_hits)
+    capped = total > max_hits
+
+    records: list[dict] = []
+    retstart = 0
+    while retstart < target:
+        batch = config.EFETCH_BATCH
+        if retstart + batch > target:
+            batch = target - retstart
+        page = efetch_history(webenv, query_key, retstart, batch)
+        for r in page:
+            r["track"] = track_name
+        records.extend(page)
+        retstart += batch
+        progress(f"  {track_name}: retrieved {len(records)}/{target}"
+                 + (" (capped)" if capped else ""))
+
+    meta = {
+        "track": track_name,
+        "total_available": total,
+        "retrieved": len(records),
+        "capped": capped,
+        "cap": max_hits,
+        "search_date_utc": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        "query": query,
+    }
+    return records, meta
 
 
 def dedup(records: list[dict]) -> tuple[list[dict], int]:

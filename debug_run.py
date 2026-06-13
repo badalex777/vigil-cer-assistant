@@ -65,10 +65,16 @@ def main():
     try:
         t1_total = pubmed.esearch_count(queries["device_specific"])
         t2_total = pubmed.esearch_count(queries["state_of_art"])
-        print(f"Track 1 (device-specific): {t1_total} total hits")
-        print(f"Track 2 (state of the art): {t2_total} total hits")
+        cap = config.MAX_HITS_PER_TRACK
+        print(f"Track 1 (device-specific): {t1_total} total hits"
+              + (f"  [EXCEEDS CAP {cap} - would be capped; refine query or proceed]"
+                 if t1_total > cap else ""))
+        print(f"Track 2 (state of the art): {t2_total} total hits"
+              + (f"  [EXCEEDS CAP {cap} - would be capped; refine query or proceed]"
+                 if t2_total > cap else ""))
         print(f"Combined (pre-dedup): {t1_total + t2_total} hits")
-        print(f"(This run will screen only the top {retmax}/track for diagnostics.)")
+        print(f"Comprehensive cap per track: {cap} (config.MAX_HITS_PER_TRACK)")
+        print(f"(This diagnostic run screens only the top {retmax}/track.)")
     except Exception as e:
         print(f"[count preview failed: {e}]")
 

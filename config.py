@@ -77,6 +77,15 @@ DEFAULT_RETMAX_PER_TRACK = 30
 PUBMED_SORT = os.getenv("VIGIL_PUBMED_SORT", "relevance")
 DB_PATH = os.getenv("VIGIL_DB", "vigil.db")
 
+# --- Comprehensive retrieval (Block 3) ----------------------------------------
+# A real CER screens ALL hits per track (PRISMA-faithful), not a top-N sample.
+# MAX_HITS_PER_TRACK is the cost guardrail: screening scales linearly with hits,
+# so if a track exceeds this, the count preview warns the PRRC to refine the
+# query or explicitly proceed. efetch is paginated in EFETCH_BATCH-sized chunks
+# via the NCBI history server (WebEnv/QueryKey).
+MAX_HITS_PER_TRACK = int(os.getenv("VIGIL_MAX_HITS_PER_TRACK", "2000"))
+EFETCH_BATCH = int(os.getenv("VIGIL_EFETCH_BATCH", "200"))
+
 # --- Prompt template versions (external, versioned) ---------------------------
 PROMPT_SCREEN   = "prompts/screen_v1.txt"
 PROMPT_EXTRACT  = "prompts/extract_v1.txt"

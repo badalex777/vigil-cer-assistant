@@ -64,8 +64,13 @@ def _build_outputs(db_path, run_id, profile, queries, duplicates):
 
 
 def run_search_and_screen(profile, db_path=None, retmax=None,
-                          progress=lambda s: None):
-    """Phase A. Returns a result dict including the retrieval_list for Phase B."""
+                          comprehensive=False, progress=lambda s: None):
+    """Phase A. Returns a result dict including the retrieval_list for Phase B.
+
+    comprehensive=False (default): top-N per track (retmax) - cheap, for demos/diagnostics.
+    comprehensive=True: retrieve ALL hits per track up to config.MAX_HITS_PER_TRACK,
+        paginated via the NCBI history server - the PRISMA-faithful path for a real CER.
+    """
     db_path = db_path or config.DB_PATH
     retmax = retmax or config.DEFAULT_RETMAX_PER_TRACK
     run_id = f"{profile.device_name[:8].strip().replace(' ','_')}-{uuid.uuid4().hex[:8]}"
@@ -76,12 +81,26 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
     progress("Building two-track search queries from Device Profile...")
     queries = pubmed.build_track_queries(profile)
 
-    progress("Track 1 (device-specific) - searching PubMed...")
-    t1 = pubmed.run_track(queries["device_specific"], "device_specific", retmax)
-    progress(f"  Track 1: {len(t1)} records")
-    progress("Track 2 (state of the art) - searching PubMed...")
-    t2 = pubmed.run_track(queries["state_of_art"], "state_of_art", retmax)
-    progress(f"  Track 2: {len(t2)} records")
+    search_meta = {}
+    if comprehensive:
+        progress("Track 1 (device-specific) - comprehensive retrieval (all hits)...")
+        t1, m1 = pubmed.run_track_comprehensive(
+            queries["device_specific"], "device_specific", progress=progress)
+        progress(f"  Track 1: {len(t1)} records"
+                 + (" (CAPPED)" if m1["capped"] else ""))
+        progress("Track 2 (state of the art) - comprehensive retrieval (all hits)...")
+        t2, m2 = pubmed.run_track_comprehensive(
+            queries["state_of_art"], "state_of_art", progress=progress)
+        progress(f"  Track 2: {len(t2)} records"
+                 + (" (CAPPED)" if m2["capped"] else ""))
+        search_meta = {"device_specific": m1, "state_of_art": m2}
+    else:
+        progress("Track 1 (device-specific) - searching PubMed...")
+        t1 = pubmed.run_track(queries["device_specific"], "device_specific", retmax)
+        progress(f"  Track 1: {len(t1)} records")
+        progress("Track 2 (state of the art) - searching PubMed...")
+        t2 = pubmed.run_track(queries["state_of_art"], "state_of_art", retmax)
+        progress(f"  Track 2: {len(t2)} records")
 
     records, dups = pubmed.dedup(t1 + t2)
     progress(f"Deduplicated: {len(records)} unique ({dups} duplicates removed)")
@@ -137,6 +156,7 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
     progress("Building outputs + manual-upload list...")
     out = _build_outputs(db_path, run_id, profile, queries, dups)
     out["_duplicates"] = dups  # carried for Phase B regeneration
+    out["search_meta"] = search_meta  # comprehensive retrieval audit metadata
     n_manual = len(out["manual_upload_list"])
     n_auto = out["counts"]["included"]
     progress(f"Phase A done. Auto-appraised {n_auto} from open access; "
