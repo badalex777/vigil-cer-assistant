@@ -70,15 +70,15 @@ All blocks advance SMART Goal 2: demonstrable prototype by 2026-07-31.
 - [x] **ClinicalTrials.gov** (API v2, free, no auth) - trial REGISTRATIONS, screened
       with their own logic (existence/publication-bias evidence, NOT papers). Own
       query syntax (query.cond/query.intr), documented separately in the search report.
-- [ ] **Embase / Cochrane export ingestor** (DEFERRED, discussed before Block 4) -
-      these are commercial (Elsevier/Wiley); access is by institutional subscription
-      (login/IP), NOT a user-copyable API key, and their licences prohibit third-party
-      automated access. So no direct connection is possible from Vigil. The path is an
-      ingestor: the PRRC runs the search in their own subscription, exports one RIS/CSV
-      file, and uploads it; Vigil parses + tags it (source = Embase/Cochrane export)
-      into the same pipeline. To be designed with low-friction UX. For SMEs that lack
-      these subscriptions, the CEP documents PubMed + ClinicalTrials.gov as the
-      searched sources with a justified strategy.
+- [x] **Embase / Cochrane export ingestor** (RIS parser) - generic RIS parser
+      (ris_ingest.py) handles exports from Embase, Cochrane, Scopus, Web of Science,
+      EndNote, Zotero. The PRRC runs the search in their own subscription, exports
+      ONE RIS file, uploads it; Vigil parses + tags (source = declared label) into
+      the same dedup/screen pipeline. The PRRC writes their own Embase/Cochrane query
+      (they own the search strategy - a regulatory responsibility); Vigil does not
+      translate queries (deferred: auto query-translation is risky/imperfect across
+      Emtree vs MeSH and would create audit exposure). Cross-source DOI dedup collapses
+      the same study found in PubMed AND Embase. UI upload wired in Block 5.
 
 ## Explicitly OUT OF SCOPE for the demo (with reasons)
 

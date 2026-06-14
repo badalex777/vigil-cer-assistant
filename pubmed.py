@@ -290,12 +290,17 @@ def dedup(records: list[dict]) -> tuple[list[dict], int]:
         doi = _norm_doi(r.get("doi", ""))
         title = _norm_title(r.get("title", ""))
         registry_id = (r.get("registry_id") or "").strip()
+        external_id = (r.get("external_id") or "").strip()
         is_trial = r.get("entry_type") == "trial_registration"
 
-        # Pass 0: registry id (NCT) - same trial registration.
+        # Pass 0: registry id (NCT) or external id (RIS export) - same record.
         if registry_id and registry_id in seen_registry:
             dups += 1
             _merge_track(seen_registry[registry_id], r)
+            continue
+        if external_id and external_id in seen_registry:
+            dups += 1
+            _merge_track(seen_registry[external_id], r)
             continue
         # Pass 1: PMID
         if pmid and pmid in seen_pmid:
@@ -321,6 +326,8 @@ def dedup(records: list[dict]) -> tuple[list[dict], int]:
         unique.append(r)
         if registry_id:
             seen_registry[registry_id] = r
+        if external_id:
+            seen_registry[external_id] = r
         if pmid:
             seen_pmid[pmid] = r
         if doi:

@@ -157,7 +157,7 @@ def upsert_record(db_path: str, run_id: str, rec: dict):
     # traceable). source/entry_type let downstream steps tell papers from trials.
     rec = dict(rec)
     if not rec.get("pmid"):
-        rec["pmid"] = rec.get("registry_id") or ""
+        rec["pmid"] = (rec.get("registry_id") or rec.get("external_id") or "")
     rec.setdefault("source", "pubmed")
     rec.setdefault("entry_type", "paper")
     cols = ["pmid", "track", "title", "abstract", "journal", "year", "doi",

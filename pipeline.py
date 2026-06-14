@@ -21,6 +21,7 @@ import config
 import db
 import pubmed
 import clinicaltrials
+import ris_ingest
 import screen
 import extract
 import retrieve
@@ -66,13 +67,15 @@ def _build_outputs(db_path, run_id, profile, queries, duplicates):
 
 def run_search_and_screen(profile, db_path=None, retmax=None,
                           comprehensive=False, include_ctgov=True,
-                          progress=lambda s: None):
+                          ris_files=None, progress=lambda s: None):
     """Phase A. Returns a result dict including the retrieval_list for Phase B.
 
     comprehensive=False (default): top-N per track (retmax) - cheap, for demos/diagnostics.
     comprehensive=True: retrieve ALL hits per track up to config.MAX_HITS_PER_TRACK,
         paginated via the NCBI history server - the PRISMA-faithful path for a real CER.
     include_ctgov=True: also search ClinicalTrials.gov (trial registrations).
+    ris_files: optional list of (path, source_label) for PRRC-uploaded subscription
+        exports (e.g. Embase/Cochrane RIS). Ingested into the same dedup/screen pipeline.
     """
     db_path = db_path or config.DB_PATH
     retmax = retmax or config.DEFAULT_RETMAX_PER_TRACK
@@ -121,13 +124,32 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
             progress(f"  ClinicalTrials.gov search failed (continuing without it): {e}")
             search_meta["clinicaltrials_gov"] = {"error": str(e)}
 
-    records, dups = pubmed.dedup(t1 + t2 + ctgov_records)
+    # --- PRRC-uploaded subscription exports (Embase/Cochrane/etc. via RIS) -------
+    # The PRRC runs the search in their own subscription and uploads ONE export
+    # file per source. Vigil ingests it into the same pipeline. The PRRC owns the
+    # search strategy in those databases (a regulatory responsibility); Vigil only
+    # parses what they export.
+    ris_records = []
+    if ris_files:
+        for path, source_label in ris_files:
+            try:
+                recs, rmeta = ris_ingest.parse_ris_file(
+                    path, source=source_label, track="device_specific")
+                ris_records.extend(recs)
+                progress(f"  {source_label}: ingested {rmeta['parsed']} references "
+                         f"({rmeta['skipped_no_title']} skipped, no title)")
+                search_meta[source_label] = rmeta
+            except Exception as e:
+                progress(f"  {source_label} ingest failed (continuing): {e}")
+                search_meta[source_label] = {"error": str(e)}
+
+    records, dups = pubmed.dedup(t1 + t2 + ctgov_records + ris_records)
     progress(f"Deduplicated: {len(records)} unique ({dups} duplicates removed)")
     for r in records:
         db.upsert_record(db_path, run_id, r)
     db.log(db_path, run_id, "search",
            f"t1={len(t1)} t2={len(t2)} ctgov={len(ctgov_records)} "
-           f"unique={len(records)} dups={dups}")
+           f"ris={len(ris_records)} unique={len(records)} dups={dups}")
 
     progress("Screening abstracts for relevance (Claude Sonnet)...")
     screen.run(db_path, run_id, profile, db.get_records(db_path, run_id))
