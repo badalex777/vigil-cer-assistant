@@ -112,7 +112,20 @@ class DeviceProfile:
     evaluator_qualifications: str = ""
     declaration_of_interest_ref: str = ""
 
-    profile_version: str = "2.0"
+    # --- Legacy device (MDCG 2020-6) ---
+    # A legacy device was CE-marked under MDD/AIMDD and is transitioning to MDR.
+    # When True, the CEP gains the MDCG 2020-6 Appendix II elements and the CER
+    # analysis references the sufficient-clinical-evidence hierarchy (Appendix III).
+    is_legacy_device: bool = False
+    # MDR Art. 61(8) well-established technology flag (affects evidence sufficiency).
+    is_well_established_technology: bool = False
+    # MDR Art. 61(1): the required level of clinical evidence, PRRC-defined.
+    required_level_of_clinical_evidence: str = ""
+    # MDCG 2020-6 App II: CEP strategies (legacy). Free text the PRRC supplies/edits.
+    alternative_treatments_strategy: str = ""   # MDR Art. 61(3)(c)
+    pms_data_collection_strategy: str = ""       # continuing safety/performance
+
+    profile_version: str = "2.1"
 
     def criteria_for_track(self, track: str) -> tuple[list[str], list[str]]:
         """Return (inclusion, exclusion) criteria for a track, falling back to the
