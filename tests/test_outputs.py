@@ -142,6 +142,66 @@ def main():
     assert "scope_hash=abc123" in csv_text, "lock must record scope_hash"
     assert "-> locked" in csv_text
 
+    # --- Document 4: CER first draft (mocked narrative, no Opus cost) ---
+    def stub_narrative(section_key, context):
+        return f"[STUB NARRATIVE: {section_key}]"
+
+    appraised = [
+        {"pmid": "34763444", "title": "NPWT meta-analysis for diabetic foot ulcers",
+         "journal": "Ann Palliat Med", "year": "2021", "source": "pubmed",
+         "entry_type": "paper", "extraction_json": '{"outcome":"healing improved"}'},
+        {"pmid": "37777272", "title": "NPWT vs alginate RCT", "journal": "Saudi Med J",
+         "year": "2023", "source": "pubmed", "entry_type": "paper"},
+    ]
+    incomplete = [{"pmid": "99999", "title": "Paywalled NPWT study"}]
+    pms = [{"signal_id": "SIG-001", "summary": "Dressing-seal failures in home care"}]
+
+    cer = outputs.generate_cer_md(profile, run_id, appraised, incomplete, pms,
+                                  narrative_fn=stub_narrative)
+    assert "AI-GENERATED FIRST DRAFT" in cer
+    # A9 structure: the major sections must be present
+    for sec in ["1. Summary", "2. Scope", "3. Clinical background", "4. Device under",
+                "5. Summary of the clinical data", "6. Analysis", "7. PMCF",
+                "8. Conclusions", "9. Dates and signatures", "10. References"]:
+        assert sec in cer, f"CER missing A9 section: {sec}"
+
+    # equivalence ASSEMBLED, never judged
+    assert "VacuHeal" in cer, "equivalence table must name the equivalent device"
+    assert "| Technical |" in cer and "| Biological |" in cer and "| Clinical |" in cer, \
+        "3-characteristic comparison table required"
+    assert "Vigil does not judge whether equivalence holds" in cer
+    assert "Equivalence determination" in cer, "equivalence must end in a PRRC placeholder"
+
+    # every judgement is a PRRC placeholder; conclusions are NEVER written by AI
+    n_ph = cer.count("[PRRC JUDGEMENT REQUIRED")
+    assert n_ph >= 6, f"expected >=6 PRRC judgement placeholders, found {n_ph}"
+    assert "Vigil does NOT write conclusions" in cer, "conclusions must be a placeholder"
+    for judgement in ["Benefit-risk acceptability", "Residual-risk acceptability",
+                      "Conformity with the relevant GSPRs",
+                      "Conclusions of the clinical evaluation"]:
+        assert judgement in cer, f"missing judgement placeholder: {judgement}"
+
+    # legacy device -> sufficiency-of-evidence section (MDCG 2020-6)
+    assert "Sufficiency of clinical evidence" in cer, "legacy sufficiency section required"
+    assert "MDCG 2020-6" in cer
+    assert "Reliance solely on complaints and vigilance is not sufficient" in cer
+
+    # narrative confined to descriptive sections; judgement sections have no AI prose
+    assert "[STUB NARRATIVE: state_of_art]" in cer, "descriptive sections get AI prose"
+    assert "[STUB NARRATIVE: evidence_summary]" in cer
+
+    # references assembled from appraised records; incomplete record NOT a reference
+    assert "[34763444]" in cer and "[37777272]" in cer
+    assert "99999" not in cer.split("## 10. References")[-1], \
+        "appraisal-incomplete record must not appear as an appraised reference"
+
+    # PMS signal surfaced for triage (not concluded on)
+    assert "SIG-001" in cer
+
+    # default (no narrative_fn) renders a clear deterministic placeholder, no crash
+    cer_offline = outputs.generate_cer_md(profile, run_id, appraised)
+    assert "Not generated in this offline render" in cer_offline
+
     print("All output-set (control block + CEP) assertions passed.")
     print("  control block: run_id + scope_hash + profile_version + disclaimer OK")
     print("  CEP renders from profile alone (downloadable at lock) OK")
@@ -154,6 +214,10 @@ def main():
     print("  Search Report: PRISMA + per-source dates + deviations OK")
     print("  Traceability Matrix: source-typed rows OK")
     print("  Audit Trail CSV: state transitions + scope_hash OK")
+    print("  CER: full A9 structure OK")
+    print("  CER: equivalence ASSEMBLED not judged (ends in PRRC placeholder) OK")
+    print("  CER: all judgements are PRRC placeholders; conclusions never AI-written OK")
+    print("  CER: legacy sufficiency section + references + PMS handoff OK")
 
 
 if __name__ == "__main__":

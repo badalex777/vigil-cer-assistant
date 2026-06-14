@@ -525,3 +525,229 @@ def generate_audit_trail_csv(run_log_rows: list[dict],
                     row.get("message", "")])
 
     return buf.getvalue()
+
+
+# --- Document 4: CER First Draft ---------------------------------------------
+# Stages 2-4. Full Appendix A9 structure. The ONLY document with AI narrative,
+# confined to DESCRIPTIVE sections. Every judgement is a PRRC placeholder.
+# Equivalence table is ASSEMBLED (MDCG 2020-5), never judged.
+
+def _equivalence_table_md(profile) -> str:
+    """Assemble the 3-characteristic equivalence comparison table (MDCG 2020-5):
+    technical / biological / clinical. The system ASSEMBLES from the equivalence
+    register and transcribes the PRRC's rationale VERBATIM. It does NOT judge whether
+    equivalence holds - that is a PRRC determination (placeholder below the table)."""
+    lines = []
+    for eq in profile.equivalent_devices:
+        if not eq.name:
+            continue
+        lines.append(f"\n**Claimed equivalent device: {eq.name}**"
+                     + (f" ({eq.model})" if getattr(eq, "model", "") else ""))
+        lines.append("")
+        lines.append("| Characteristic | PRRC rationale (transcribed verbatim) |")
+        lines.append("|---|---|")
+        tech = getattr(eq, "technical_characteristics", "") or "[PRRC to provide]"
+        bio = getattr(eq, "biological_characteristics", "") or "[PRRC to provide]"
+        clin = getattr(eq, "clinical_characteristics", "") or "[PRRC to provide]"
+        lines.append(f"| Technical | {tech} |")
+        lines.append(f"| Biological | {bio} |")
+        lines.append(f"| Clinical | {clin} |")
+        diffs = getattr(eq, "differences_and_justification", "") \
+            or getattr(eq, "differences", "")
+        lines.append("")
+        lines.append("**Differences disclosed and their justification (MDCG 2020-5 / "
+                     "MEDDEV A10 require ALL differences disclosed):**")
+        lines.append(diffs or "[PRRC to disclose ALL differences between the device and "
+                              "this equivalent, and justify why they do not affect "
+                              "clinical performance and safety.]")
+        access = getattr(eq, "technical_documentation_access", "")
+        lines.append("")
+        lines.append(f"**Access to the equivalent's technical documentation (MDR Annex "
+                     f"XIV / MDCG 2020-5):** {access or '[PRRC to attest ongoing access.]'}")
+    return "\n".join(lines)
+
+
+def generate_cer_md(profile, run_id: str, appraised_records: list[dict],
+                    incomplete_records: list[dict] | None = None,
+                    pms_signals: list[dict] | None = None,
+                    counts=None, scope_hash: str | None = None,
+                    narrative_fn=None) -> str:
+    """Render the CER first draft (Appendix A9 structure) as Markdown.
+
+    appraised_records: fully appraised (full-text) records with extraction/appraisal data.
+    narrative_fn: callable(section_key, context_dict) -> str that produces AI prose for
+        the DESCRIPTIVE sections (device background, state of the art, evidence summary).
+        Injectable so tests run offline with a stub and real runs pass an Opus-backed fn.
+        If None, descriptive sections render a clearly-marked deterministic placeholder.
+    """
+    incomplete_records = incomplete_records or []
+    pms_signals = pms_signals or []
+
+    def _narr(section_key, context):
+        if narrative_fn is None:
+            return (f"*[AI narrative for '{section_key}' is generated during a full run "
+                    f"from the appraised evidence. Not generated in this offline render.]*")
+        return narrative_fn(section_key, context)
+
+    out = [document_header_md(profile, run_id,
+                              "Clinical Evaluation Report (CER) - First Draft",
+                              scope_hash=scope_hash)]
+    a = out.append
+
+    a("## 1. Summary\n")
+    a(_narr("summary", {"profile": profile, "n_appraised": len(appraised_records)}))
+    a("")
+
+    a("## 2. Scope of the clinical evaluation\n")
+    a(f"- **Device:** {profile.device_name} ({profile.classification}, "
+      f"rule {profile.classification_rule})")
+    a(f"- **Intended purpose:** {profile.intended_purpose}")
+    a(f"- **Target population / conditions:** {profile.pico_population or '[]'}; "
+      f"{_as_text(profile.medical_condition)}")
+    a("- Scope and method are defined in the Clinical Evaluation Plan (CEP); search in "
+      "the Literature Search Protocol and Report.")
+    a("")
+
+    a("## 3. Clinical background, current knowledge, state of the art\n")
+    a(_narr("state_of_art", {"profile": profile,
+                             "condition": _as_text(profile.medical_condition),
+                             "technology": _as_text(profile.technology_category)}))
+    a("\n*State-of-the-art / similar-device data is supportive CONTEXT and does not "
+      "constitute clinical data under the MDR (MDCG 2020-6).*\n")
+
+    a("## 4. Device under evaluation\n")
+    a("### 4.1 Device description and intended purpose\n")
+    a(profile.device_description)
+    a(f"\nIntended purpose: {profile.intended_purpose}\n")
+
+    a("### 4.2 Equivalence\n")
+    if profile.equivalence_claimed:
+        a("The following equivalence comparison is ASSEMBLED from the manufacturer's "
+          "equivalence register (MDCG 2020-5). The PRRC's rationale is transcribed "
+          "verbatim. Vigil does not judge whether equivalence holds.")
+        a(_equivalence_table_md(profile))
+        a("")
+        a(prrc_placeholder(
+            "Equivalence determination",
+            "Determine whether equivalence is demonstrated for all three characteristics "
+            "(technical, biological, clinical) per MDCG 2020-5, taking into account the "
+            "disclosed differences. This determination is the PRRC's; Vigil only "
+            "assembles the comparison."))
+    else:
+        a("No equivalence is claimed.")
+    a("")
+
+    a("### 4.3 Manufacturer-held clinical data\n")
+    mh = [r for r in appraised_records if r.get("source") == "manufacturer_held"]
+    if mh:
+        a(f"{len(mh)} manufacturer-held data item(s) were ingested and appraised "
+          f"alongside the literature (tagged 'Manufacturer-Held Data').")
+    else:
+        a("No manufacturer-held clinical data was provided for this run. "
+          "[PRRC to confirm whether pre-market investigations, PMCF, or PMS records "
+          "exist and should be included - MEDDEV 8.1.]")
+    a("")
+
+    a("## 5. Summary of the clinical data and appraisal\n")
+    a(f"{len(appraised_records)} record(s) were fully appraised (full text, MEDDEV "
+      f"Appendix A6). Each claim below is traceable to its source (see Evidence "
+      f"Traceability Matrix).")
+    if incomplete_records:
+        a(f"\n{len(incomplete_records)} record(s) remain 'appraisal incomplete' (no "
+          f"open-access full text retrieved; routed to PRRC manual upload). These are "
+          f"NOT used as appraised evidence.")
+    a("")
+    a(_narr("evidence_summary", {"profile": profile,
+                                 "appraised": appraised_records}))
+    a("")
+
+    a("## 6. Analysis of the clinical data\n")
+    a("### 6.1 Performance\n")
+    a(_narr("performance", {"appraised": appraised_records}))
+    a("\n### 6.2 Safety\n")
+    a(_narr("safety", {"appraised": appraised_records}))
+
+    if profile.is_legacy_device:
+        a("\n### 6.3 Sufficiency of clinical evidence (legacy device, MDCG 2020-6)\n")
+        a("Evidence sources are considered against the sufficient-clinical-evidence "
+          "hierarchy (MDCG 2020-6 Appendix III, ranks 1-8). Most appraised literature "
+          "falls at rank 4 (quantifiable data with possible methodological limitations); "
+          "state-of-the-art context is rank 6 (not clinical data under the MDR). "
+          + ("As a well-established technology, cumulative evidence from these sources "
+             "may suffice if appropriately appraised. " if profile.is_well_established_technology
+             else "")
+          + "Reliance solely on complaints and vigilance is not sufficient.")
+        a(prrc_placeholder(
+            "Sufficiency of clinical evidence for each GSPR",
+            "Assess whether the cumulative appraised evidence meets the required level "
+            "of clinical evidence for each relevant GSPR (MDCG 2020-6). Narrow the "
+            "intended purpose if evidence is insufficient."))
+        base = 4
+    else:
+        base = 3
+
+    a(f"\n### 6.{base} Benefit-risk\n")
+    a(prrc_placeholder(
+        "Benefit-risk acceptability",
+        "Determine, based on the state of the art, whether the benefit-risk profile is "
+        "acceptable for each indication and the intended purpose (MEDDEV A10; MDR Annex "
+        "I). Vigil presents the evidence; it does not conclude."))
+    a(f"\n### 6.{base + 1} Residual-risk acceptability\n")
+    a(prrc_placeholder(
+        "Residual-risk acceptability",
+        "Determine whether residual risks and undesirable side-effects are acceptable "
+        "in relation to the benefits and the state of the art (ISO 14971; MEDDEV A10)."))
+    a(f"\n### 6.{base + 2} GSPR conformity\n")
+    a(prrc_placeholder(
+        "Conformity with the relevant GSPRs",
+        "Conclude on conformity with each relevant General Safety and Performance "
+        "Requirement (MDR Annex I) based on the appraised clinical evidence. This is the "
+        "manufacturer's determination."))
+    a("")
+
+    a("## 7. PMCF / PMS considerations\n")
+    if pms_signals:
+        a(f"{len(pms_signals)} CER-relevant post-market signal(s) were surfaced from the "
+          f"Vigil PMS Monitor handoff for PRRC triage:")
+        for s in pms_signals[:20]:
+            sid = s.get("signal_id") or s.get("id") or "-"
+            a(f"- [{sid}] {s.get('summary', s.get('description',''))[:160]}")
+    else:
+        a("No CER-relevant PMS signals were provided for this run.")
+    a(prrc_placeholder(
+        "PMCF plan and PMS integration",
+        "Define the PMCF plan and how PMS data are systematically collected and fed back "
+        "into the CER update cycle (MDR Annex XIV Part B; MDCG 2020-7/2020-8)."))
+    a("")
+
+    a("## 8. Conclusions\n")
+    a(prrc_placeholder(
+        "Conclusions of the clinical evaluation",
+        "State the conclusions on clinical safety, performance, benefit-risk, and GSPR "
+        "conformity. Vigil does NOT write conclusions - it describes evidence."))
+    a("")
+
+    a("## 9. Dates and signatures\n")
+    a(f"- **Evaluator (PRRC):** {profile.evaluator_name or '[to be completed]'}")
+    a(f"- **Qualifications:** {profile.evaluator_qualifications or '[to be completed]'}")
+    a(f"- **Declaration of interests:** {profile.declaration_of_interest_ref or '[to attach]'}")
+    a("- **Statement of agreement:** [Evaluator to confirm agreement with the contents.]")
+    a("- **Evaluator signature / date:** ______________________")
+    a("- **Manufacturer final release (name / signature / date):** ______________________")
+    a("\n*The CER must be dated, version-controlled, and signed by the evaluator with CV "
+      "and declaration of interests (MEDDEV Section 11 / A9 item 7).*\n")
+
+    a("## 10. References\n")
+    refs = []
+    for r in appraised_records:
+        sid = r.get("pmid") or r.get("registry_id") or r.get("external_id") or "?"
+        title = r.get("title", "")
+        journal = r.get("journal", "")
+        year = r.get("year", "")
+        refs.append(f"- [{sid}] {title}. {journal} {year}.".replace("  ", " "))
+    if refs:
+        out.extend(refs)
+    else:
+        a("[No appraised references in this run.]")
+    a("")
+    return "\n".join(out)
