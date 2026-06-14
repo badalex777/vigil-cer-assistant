@@ -285,3 +285,243 @@ def generate_cep_md(profile, run_id: str, approved_queries: dict | None = None,
     a("")
 
     return "\n".join(out)
+
+
+# --- Document 2: Literature Search Protocol ----------------------------------
+# Stage 1 (the PLAN, before execution). Deterministic from approved strings.
+# Populates CEAR Section D. Hard rules: MEDDEV Appendix A5.3.
+
+def generate_search_protocol_md(profile, run_id: str, approved_queries: dict,
+                                scope_hash: str | None = None,
+                                ris_sources: list[str] | None = None) -> str:
+    out = [document_header_md(profile, run_id,
+                              "Literature Search Protocol", scope_hash=scope_hash)]
+    a = out.append
+
+    a("## 1. Background and rationale (MEDDEV A5.1)\n")
+    a(f"This protocol plans the literature search for the clinical evaluation of "
+      f"{profile.device_name} BEFORE execution (MEDDEV 2.7/1 rev 4 A5.3: \"the purpose "
+      f"of a literature search protocol is to plan the search before execution\"). "
+      f"The search informs the state-of-the-art assessment and the device-specific "
+      f"clinical evidence.")
+    if profile.equivalence_claimed:
+        a(f"\nEquivalence is claimed to {_as_text(profile.equivalent_device_names())}; "
+          f"literature on the equivalent device is sought in Track 1.")
+    a("")
+
+    a("## 2. Objective - review questions (PICO, MEDDEV A5.2)\n")
+    a(f"- **Track 1 (device-specific):** population {profile.pico_population or '[]'}; "
+      f"intervention {profile.pico_intervention or profile.device_name}; "
+      f"comparator {profile.pico_comparator or '[]'}; "
+      f"outcomes {profile.pico_outcomes or '[]'}.")
+    a(f"- **Track 2 (state of the art):** current management of "
+      f"{_as_text(profile.medical_condition)} using "
+      f"{_as_text(profile.technology_category)}; clinical benchmarks and known risks.")
+    a("")
+
+    a("## 3. Methods (MEDDEV A5.3)\n")
+    a("### 3.1 Sources and justification\n")
+    a("- **PubMed/MEDLINE** - most comprehensive biomedical index for device clinical "
+      "evaluation; searched comprehensively (all hits up to the configured cap).")
+    a("- **ClinicalTrials.gov** - trial registrations incl. unpublished studies; "
+      "supports identification of all data, favourable and unfavourable (publication "
+      "bias).")
+    if ris_sources:
+        for s in ris_sources:
+            a(f"- **{s}** - searched by the PRRC in their own institutional subscription; "
+              f"results exported (RIS) and ingested. The PRRC owns this search strategy.")
+    else:
+        a("- **Embase / Cochrane** - searched by the PRRC in their own subscription where "
+          "available; results ingested via export. (Not directly connectable: commercial "
+          "licences prohibit third-party automated access.)")
+    a("")
+    a("### 3.2 Search strings (frozen at sign-off, verbatim)\n")
+    for track, q in approved_queries.items():
+        a(f"**{track}:**\n```\n{q}\n```")
+    a(f"- **Date limits:** {profile.date_from} to {profile.date_to}")
+    a(f"- **Language limits:** {_as_text(profile.languages) or 'English'}")
+    a("")
+    a("### 3.3 Selection criteria (locked at sign-off)\n")
+    inc, exc = profile.criteria_for_track("device_specific")
+    a("**Inclusion (device-specific / Track 1):**")
+    for c in inc:
+        a(f"- {c}")
+    a("\n**Exclusion (device-specific / Track 1):**")
+    for c in exc:
+        a(f"- {c}")
+    inc2, exc2 = profile.criteria_for_track("state_of_art")
+    if inc2 != inc or exc2 != exc:
+        a("\n**Inclusion (state of the art / Track 2):**")
+        for c in inc2:
+            a(f"- {c}")
+        a("\n**Exclusion (state of the art / Track 2):**")
+        for c in exc2:
+            a(f"- {c}")
+    a("\n*Criteria are LOCKED before execution. The audit trail shows they did not "
+      "change between sign-off and search, preventing post-hoc tuning toward favourable "
+      "papers (MEDDEV 8.2: thorough and objective; identify all favourable AND "
+      "unfavourable data).*\n")
+
+    a("### 3.4 Deduplication strategy\n")
+    a("Multi-pass deduplication: (1) PubMed ID, (2) normalized DOI (catches "
+      "ahead-of-print and the same study across sources), (3) normalized title, "
+      "(4) registry/external id. Trial registrations are not collapsed against "
+      "same-title published papers (different evidence types). Duplicate count feeds "
+      "the PRISMA 'duplicates removed' box.\n")
+
+    a("### 3.5 Avoiding duplication of manufacturer-held data\n")
+    a("Manufacturer-held clinical data (pre-market investigations, PMCF, PMS) enters via "
+      "upload, tagged 'Manufacturer-Held Data', and is appraised alongside the literature "
+      "- not re-searched in the databases.\n")
+
+    a("### 3.6 Data collection, appraisal and analysis plans\n")
+    a("- **Data collection:** abstract screening (Sonnet) against the locked criteria; "
+      "full-text retrieval (open access via PMC/Unpaywall) for included records; "
+      "deterministic identity verification before any auto-retrieved full text is "
+      "appraised.")
+    a("- **Appraisal plan:** full-text appraisal (Opus) per MEDDEV Appendix A6, scoring "
+      "methodological quality and relevance. Abstract-only records are screening, never "
+      "the basis of appraisal.")
+    a("- **Analysis plan:** evidence summarised per outcome with citation to source; "
+      "for legacy devices, mapped to the sufficient-evidence hierarchy (MDCG 2020-6 "
+      "App III). All judgements (benefit-risk, equivalence, conformity) are PRRC's.")
+    a("")
+    return "\n".join(out)
+
+
+# --- Document 3: Literature Search Report ------------------------------------
+# Stage 1 (what HAPPENED on execution) + PRISMA flow. Deterministic.
+
+def generate_search_report_md(profile, run_id: str, counts, search_meta: dict,
+                              prisma_svg: str = "", scope_hash: str | None = None) -> str:
+    """counts: a prisma.PrismaCounts (or .as_dict()). search_meta: per-source metadata
+    captured during retrieval (totals, capped flags, search dates)."""
+    cd = counts.as_dict() if hasattr(counts, "as_dict") else dict(counts)
+    out = [document_header_md(profile, run_id,
+                              "Literature Search Report", scope_hash=scope_hash)]
+    a = out.append
+
+    a("## 1. Execution summary\n")
+    a("This report documents the EXECUTION of the search planned in the Literature "
+      "Search Protocol (MEDDEV A5.3), to a degree allowing the methods to be appraised "
+      "critically, the results verified, and the search reproduced.\n")
+
+    a("## 2. Per-source results and search dates\n")
+    a("| Source | Search date (UTC) | Total available | Retrieved | Capped |")
+    a("|---|---|---|---|---|")
+    if search_meta:
+        for src, m in search_meta.items():
+            if not isinstance(m, dict) or m.get("error"):
+                a(f"| {src} | - | - | - | error: {m.get('error','?') if isinstance(m,dict) else m} |")
+                continue
+            a(f"| {src} | {m.get('search_date_utc','-')} | "
+              f"{m.get('total_available','-')} | {m.get('retrieved','-')} | "
+              f"{'yes' if m.get('capped') else 'no'} |")
+    else:
+        a("| (search metadata not recorded for this run) | - | - | - | - |")
+    a("")
+    a("*Where total available exceeds retrieved, the difference is recorded (e.g. records "
+      "indexed but not retrievable - retracted, ahead-of-print without full metadata). "
+      "This per-stage accounting is required by PRISMA 2020.*\n")
+
+    a("## 3. PRISMA 2020 flow\n")
+    a(f"- Records identified (databases): {cd.get('db_records',0)}")
+    a(f"- Records from registers: {cd.get('register_records',0)}")
+    a(f"- Duplicates removed: {cd.get('duplicates_removed',0)}")
+    a(f"- Records screened (title/abstract): {cd.get('screened',0)}")
+    a(f"- Excluded at screening: {cd.get('excluded_screening',0)}")
+    a(f"- Reports sought for retrieval: {cd.get('reports_sought',0)}")
+    a(f"- Reports not retrieved (paywalled residual -> PRRC upload): "
+      f"{cd.get('reports_not_retrieved',0)}")
+    a(f"- Reports assessed (full-text appraisal): {cd.get('assessed',0)}")
+    a(f"- Excluded at eligibility: {cd.get('excluded_eligibility',0)}")
+    a(f"- **Included in clinical evaluation: {cd.get('included',0)}**")
+    a("")
+    if prisma_svg:
+        a("*(PRISMA 2020 flow diagram rendered separately as SVG and included in the "
+          "output package.)*\n")
+
+    a("## 4. Deviations from the protocol\n")
+    a(prrc_placeholder(
+        "Deviations from the search protocol",
+        "Record any deviations from the planned protocol (e.g. supplementary manual "
+        "searches the PRRC ran, sources unavailable, adjustments) and their rationale. "
+        "If there were no deviations, state 'No deviations.'"))
+    a("")
+    return "\n".join(out)
+
+
+# --- Document 5: Evidence Traceability Matrix --------------------------------
+# Audit support. Deterministic. Maps each retained record to its source + status.
+
+def generate_traceability_matrix_md(profile, run_id: str, records: list[dict],
+                                    scope_hash: str | None = None) -> str:
+    """records: the run's retained records (each a dict with id/source/track/verdict)."""
+    out = [document_header_md(profile, run_id,
+                              "Evidence Traceability Matrix", scope_hash=scope_hash)]
+    a = out.append
+    a("## Traceability of evidence to source\n")
+    a("Each retained record is traceable to its source identifier and evidence type. An "
+      "auditor can move from any cited item in the CER to its source in one step "
+      "(MEDDEV: results must be verifiable; every claim traceable to source).\n")
+    a("| # | Source ID | Source | Evidence type | Track | Screen verdict |")
+    a("|---|---|---|---|---|---|")
+    for i, r in enumerate(records, 1):
+        sid = r.get("pmid") or r.get("registry_id") or r.get("external_id") or "-"
+        src = r.get("source", "pubmed")
+        etype = r.get("entry_type", "paper")
+        etype_label = {
+            "paper": "Published Literature",
+            "trial_registration": "Trial Registration",
+        }.get(etype, etype)
+        if src and src not in ("pubmed", "clinicaltrials_gov"):
+            etype_label = f"{etype_label} ({src})"
+        track = r.get("track", "-")
+        verdict = r.get("screen_verdict") or "-"
+        a(f"| {i} | {sid} | {src} | {etype_label} | {track} | {verdict} |")
+    a("")
+    a(f"*Total retained records: {len(records)}. Source types: Published Literature / "
+      f"Trial Registration / Manufacturer-Held Data / PMS Signal as applicable.*\n")
+    return "\n".join(out)
+
+
+# --- Document 6: Audit Trail Export (CSV) ------------------------------------
+# Audit / QMS support. Deterministic. Formalizes run_log to CSV.
+
+def generate_audit_trail_csv(run_log_rows: list[dict],
+                             state_row: dict | None = None) -> str:
+    """run_log_rows: list of {ts, stage, message} from db. state_row: the run_state row
+    (transition timestamps). Returns CSV text. Fits the client's ISO 13485 4.2.4/4.2.5
+    record control."""
+    import csv
+    import io as _io
+    buf = _io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["timestamp_utc", "category", "event"])
+
+    def _fmt_ts(ts):
+        try:
+            return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(float(ts)))
+        except (TypeError, ValueError):
+            return str(ts)
+
+    # State transitions first (the lifecycle backbone), if provided.
+    if state_row:
+        for state, col in (("draft", "created_at"), ("strings_approved", "approved_at"),
+                           ("locked", "locked_at"), ("running", "running_at"),
+                           ("phase_b", "phase_b_at"), ("complete", "complete_at")):
+            ts = state_row.get(col)
+            if ts:
+                extra = ""
+                if state == "locked" and state_row.get("locked_scope_hash"):
+                    extra = f" (scope_hash={state_row['locked_scope_hash']})"
+                if state in ("strings_approved", "locked") and state_row.get("actor"):
+                    extra += f" (actor={state_row['actor']})"
+                w.writerow([_fmt_ts(ts), "state_transition", f"-> {state}{extra}"])
+
+    # Then the append-only event log.
+    for row in run_log_rows:
+        w.writerow([_fmt_ts(row.get("ts")), row.get("stage", ""),
+                    row.get("message", "")])
+
+    return buf.getvalue()
