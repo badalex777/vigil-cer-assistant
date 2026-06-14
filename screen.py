@@ -11,13 +11,16 @@ _SYSTEM = "You output only valid JSON. No markdown, no preamble."
 def _fmt(profile, rec) -> str:
     tmpl = load_prompt(config.PROMPT_SCREEN)
     inclusion, exclusion = profile.criteria_for_track(rec["track"])
+    # PubMed records key on pmid; ClinicalTrials.gov registrations have no pmid,
+    # so fall back to their registry_id (NCT). The screener treats either as the ID.
+    record_id = rec.get("pmid") or rec.get("registry_id") or ""
     return tmpl.format(
         device_name=profile.device_name,
         intended_purpose=profile.intended_purpose,
         track=rec["track"],
         inclusion_criteria="\n".join(f"- {c}" for c in inclusion),
         exclusion_criteria="\n".join(f"- {c}" for c in exclusion),
-        pmid=rec["pmid"],
+        pmid=record_id,
         title=rec.get("title", ""),
         abstract=rec.get("abstract", "") or "[no abstract available]",
     )

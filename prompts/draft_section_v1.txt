@@ -1,7 +1,7 @@
 You are drafting the LITERATURE ANALYSIS portion of a Clinical Evaluation Report
 (CER) first draft, aligned to MEDDEV 2.7/1 rev 4 Section 11 / Appendix A9. You
 write ONLY from the structured extracted data provided. This is a FIRST DRAFT for
-a PRRC to review, complete, and sign — not a regulatory deliverable.
+a PRRC to review, complete, and sign - not a regulatory deliverable.
 
 ABSOLUTE RULES
 - Use ONLY the extracted data below. Do not add facts, numbers, or claims from
@@ -14,18 +14,18 @@ ABSOLUTE RULES
 - Where a human judgment is required, emit the exact placeholder text given below
   rather than attempting the judgment.
 
-HUMAN-ONLY PLACEHOLDERS (emit verbatim where relevant — do not fill these in)
-- "[PRRC TO COMPLETE: Demonstration of equivalence — requires technical/biological/clinical data not derivable from literature (MEDDEV Appendix A1).]"
-- "[PRRC TO COMPLETE: Benefit/risk determination and conclusion on conformity with relevant GSPRs (MEDDEV §10, §11).]"
-- "[PRRC TO COMPLETE: Identification of residual risks and PMCF needs (MEDDEV §11).]"
-- "[PRRC TO COMPLETE: Final statement of compliance — manufacturer responsibility.]"
+HUMAN-ONLY PLACEHOLDERS (emit verbatim where relevant - do not fill these in)
+- "[PRRC TO COMPLETE: Demonstration of equivalence - requires technical/biological/clinical data not derivable from literature (MEDDEV Appendix A1).]"
+- "[PRRC TO COMPLETE: Benefit/risk determination and conclusion on conformity with relevant GSPRs (MEDDEV ?10, ?11).]"
+- "[PRRC TO COMPLETE: Identification of residual risks and PMCF needs (MEDDEV ?11).]"
+- "[PRRC TO COMPLETE: Final statement of compliance - manufacturer responsibility.]"
 
 (GSPR = General Safety and Performance Requirements, MDR Annex I. PMCF = Post-Market Clinical Follow-up.)
 
 DEVICE
-{device_name} — {intended_purpose}
+{device_name} - {intended_purpose}
 
-EXTRACTED DATA — FULLY APPRAISED full-text studies only (JSON; each tagged with its
+EXTRACTED DATA - FULLY APPRAISED full-text studies only (JSON; each tagged with its
 track and a MEDDEV A6 appraisal). These are the studies whose full text was reviewed.
 {extracted_json}
 
@@ -38,11 +38,11 @@ PMS SIGNALS CARRIED FORWARD (CER-relevant, human-triaged; may be empty)
 
 Write the section in Markdown with this structure:
 1. Summary of literature search results (counts only; the PRISMA diagram is separate)
-2. Device-specific clinical evidence (Track 1) — for each fully appraised study,
+2. Device-specific clinical evidence (Track 1) - for each fully appraised study,
    state the MEDDEV A6 appraisal (quality, relevance, contribution), then performance,
    then adverse events, all with PMID citations
-3. State of the art (Track 2) — kept strictly separate
-4. Papers flagged appraisal incomplete — list them and state that full-text
+3. State of the art (Track 2) - kept strictly separate
+4. Papers flagged appraisal incomplete - list them and state that full-text
    appraisal is outstanding (do NOT summarise their data as if appraised)
 5. Post-market signals relevant to this evaluation (from the signals above, if any)
 6. Human-only sections (emit the placeholders above)

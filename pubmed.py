@@ -236,17 +236,96 @@ def run_track_comprehensive(query: str, track_name: str,
     return records, meta
 
 
+def _norm_doi(doi: str) -> str:
+    """Normalize a DOI for comparison: lowercase, strip URL prefix and whitespace."""
+    if not doi:
+        return ""
+    d = doi.strip().lower()
+    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
+        if d.startswith(prefix):
+            d = d[len(prefix):]
+    return d.strip()
+
+
+def _norm_title(title: str) -> str:
+    """Normalize a title for comparison: lowercase, collapse whitespace, drop
+    punctuation. Catches the same paper indexed with trivial formatting
+    differences (e.g. ahead-of-print vs final, or the same study across sources)."""
+    if not title:
+        return ""
+    t = title.lower()
+    t = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in t)
+    return " ".join(t.split())
+
+
 def dedup(records: list[dict]) -> tuple[list[dict], int]:
-    """Dedup by PMID across tracks. If a paper appears in both tracks, keep the
-    first occurrence and tag it 'both'. Returns (unique_records, n_duplicates)."""
-    seen: dict[str, dict] = {}
+    """Collapse duplicate papers, keeping ONE per real paper. Multi-pass so the
+    same study is caught even when it has different identifiers:
+
+      1. PMID         - same PubMed record (also handles Track1/Track2 overlap).
+      2. normalized DOI - same paper, different PMID (e.g. ahead-of-print vs final)
+                          or the same study retrieved from a different source.
+      3. normalized title - last-resort match when DOI is missing on one copy.
+
+    When two records collapse and they came from different tracks, the survivor is
+    tagged 'both' (it is relevant to device-specific AND state-of-the-art searches).
+    Returns (unique_records, n_duplicates_removed) - the duplicate count feeds the
+    PRISMA 'duplicates removed' box (required by PRISMA 2020).
+    """
+    seen_pmid: dict[str, dict] = {}
+    seen_doi: dict[str, dict] = {}
+    seen_title: dict[str, dict] = {}
+    seen_registry: dict[str, dict] = {}
+    unique: list[dict] = []
     dups = 0
+
+    def _merge_track(survivor: dict, other: dict):
+        # If the same paper was found by both tracks, mark it 'both' for the report.
+        if survivor.get("track") and other.get("track") \
+                and survivor["track"] != other["track"]:
+            survivor["track"] = "both"
+
     for r in records:
-        pmid = r["pmid"]
-        if pmid in seen:
+        pmid = (r.get("pmid") or "").strip()
+        doi = _norm_doi(r.get("doi", ""))
+        title = _norm_title(r.get("title", ""))
+        registry_id = (r.get("registry_id") or "").strip()
+        is_trial = r.get("entry_type") == "trial_registration"
+
+        # Pass 0: registry id (NCT) - same trial registration.
+        if registry_id and registry_id in seen_registry:
             dups += 1
-            if seen[pmid]["track"] != r["track"]:
-                seen[pmid]["track"] = "both"
-        else:
-            seen[pmid] = r
-    return list(seen.values()), dups
+            _merge_track(seen_registry[registry_id], r)
+            continue
+        # Pass 1: PMID
+        if pmid and pmid in seen_pmid:
+            dups += 1
+            _merge_track(seen_pmid[pmid], r)
+            continue
+        # Pass 2: DOI (only if DOI present)
+        if doi and doi in seen_doi:
+            dups += 1
+            _merge_track(seen_doi[doi], r)
+            continue
+        # Pass 3: title (only if title present and long enough). Do NOT collapse a
+        # trial registration against a published paper of similar title - they are
+        # different evidence types and must both be counted.
+        if title and len(title) >= 15 and title in seen_title:
+            prev = seen_title[title]
+            if (prev.get("entry_type") == "trial_registration") == is_trial:
+                dups += 1
+                _merge_track(prev, r)
+                continue
+
+        # New unique record - index it under every key it has.
+        unique.append(r)
+        if registry_id:
+            seen_registry[registry_id] = r
+        if pmid:
+            seen_pmid[pmid] = r
+        if doi:
+            seen_doi[doi] = r
+        if title and len(title) >= 15:
+            seen_title[title] = r
+
+    return unique, dups

@@ -20,6 +20,7 @@ import uuid
 import config
 import db
 import pubmed
+import clinicaltrials
 import screen
 import extract
 import retrieve
@@ -64,12 +65,14 @@ def _build_outputs(db_path, run_id, profile, queries, duplicates):
 
 
 def run_search_and_screen(profile, db_path=None, retmax=None,
-                          comprehensive=False, progress=lambda s: None):
+                          comprehensive=False, include_ctgov=True,
+                          progress=lambda s: None):
     """Phase A. Returns a result dict including the retrieval_list for Phase B.
 
     comprehensive=False (default): top-N per track (retmax) - cheap, for demos/diagnostics.
     comprehensive=True: retrieve ALL hits per track up to config.MAX_HITS_PER_TRACK,
         paginated via the NCBI history server - the PRISMA-faithful path for a real CER.
+    include_ctgov=True: also search ClinicalTrials.gov (trial registrations).
     """
     db_path = db_path or config.DB_PATH
     retmax = retmax or config.DEFAULT_RETMAX_PER_TRACK
@@ -102,12 +105,29 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
         t2 = pubmed.run_track(queries["state_of_art"], "state_of_art", retmax)
         progress(f"  Track 2: {len(t2)} records")
 
-    records, dups = pubmed.dedup(t1 + t2)
+    # --- ClinicalTrials.gov (second source: trial registrations, not papers) ---
+    ctgov_records = []
+    if include_ctgov:
+        progress("ClinicalTrials.gov - searching trial registry (device-specific)...")
+        try:
+            ct_max = None if comprehensive else max(retmax, 20)
+            ctgov_records, ct_meta = clinicaltrials.run_ctgov(
+                profile, track_name="device_specific",
+                max_hits=ct_max, progress=progress)
+            progress(f"  ClinicalTrials.gov: {len(ctgov_records)} trial registrations"
+                     + (" (CAPPED)" if ct_meta.get("capped") else ""))
+            search_meta["clinicaltrials_gov"] = ct_meta
+        except Exception as e:
+            progress(f"  ClinicalTrials.gov search failed (continuing without it): {e}")
+            search_meta["clinicaltrials_gov"] = {"error": str(e)}
+
+    records, dups = pubmed.dedup(t1 + t2 + ctgov_records)
     progress(f"Deduplicated: {len(records)} unique ({dups} duplicates removed)")
     for r in records:
         db.upsert_record(db_path, run_id, r)
     db.log(db_path, run_id, "search",
-           f"t1={len(t1)} t2={len(t2)} unique={len(records)} dups={dups}")
+           f"t1={len(t1)} t2={len(t2)} ctgov={len(ctgov_records)} "
+           f"unique={len(records)} dups={dups}")
 
     progress("Screening abstracts for relevance (Claude Sonnet)...")
     screen.run(db_path, run_id, profile, db.get_records(db_path, run_id))

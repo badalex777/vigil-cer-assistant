@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS records (
     journal         TEXT,
     year            TEXT,
     doi             TEXT,
+    source          TEXT DEFAULT 'pubmed',    -- 'pubmed' | 'clinicaltrials_gov'
+    entry_type      TEXT DEFAULT 'paper',     -- 'paper' | 'trial_registration'
     -- screening
     screen_verdict  TEXT,                     -- 'include' | 'exclude' | 'uncertain'
     screen_rationale TEXT,
@@ -150,7 +152,16 @@ def start_run(db_path: str, run_id: str, profile):
 
 
 def upsert_record(db_path: str, run_id: str, rec: dict):
-    cols = ["pmid", "track", "title", "abstract", "journal", "year", "doi"]
+    # Unified record id: PubMed records use pmid; ClinicalTrials.gov registrations
+    # have no pmid, so their NCT registry_id serves as the id (equally unique and
+    # traceable). source/entry_type let downstream steps tell papers from trials.
+    rec = dict(rec)
+    if not rec.get("pmid"):
+        rec["pmid"] = rec.get("registry_id") or ""
+    rec.setdefault("source", "pubmed")
+    rec.setdefault("entry_type", "paper")
+    cols = ["pmid", "track", "title", "abstract", "journal", "year", "doi",
+            "source", "entry_type"]
     with connect(db_path) as c:
         c.execute(
             f"INSERT OR IGNORE INTO records (run_id,{','.join(cols)}) "
