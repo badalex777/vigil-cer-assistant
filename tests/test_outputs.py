@@ -33,7 +33,7 @@ def main():
     cb = outputs.build_control_block(profile, run_id, "Test Document")
     assert cb["run_id"] == run_id
     assert cb["scope_hash"], "scope hash must be present"
-    assert cb["profile_version"] == "2.1"
+    assert cb["profile_version"] == "2.2"
     assert cb["device_name"] == profile.device_name
 
     hdr = outputs.render_control_block_md(cb)
@@ -162,8 +162,19 @@ def main():
     # A9 structure: the major sections must be present
     for sec in ["1. Summary", "2. Scope", "3. Clinical background", "4. Device under",
                 "5. Summary of the clinical data", "6. Analysis", "7. PMCF",
-                "8. Conclusions", "9. Dates and signatures", "10. References"]:
+                "8. Conclusions", "9. Date of next evaluation",
+                "10. Dates and signatures", "11. References"]:
         assert sec in cer, f"CER missing A9 section: {sec}"
+
+    # Greenlight refinement 1: evaluator must require relevant clinical specialty
+    assert "clinical specialty relevant to the device" in cer, \
+        "evaluator placeholder must require relevant clinical specialty"
+    # Greenlight refinement 2: date-of-next-evaluation now populated from the profile
+    # (PRRC defines the interval up front, it flows into the CER)
+    assert "Update frequency (defined by the PRRC)" in cer, \
+        "next-evaluation interval should populate from the profile"
+    assert "24 months" in cer, "PRRC-defined interval should render"
+    assert "well-established technology" in cer.lower()
 
     # equivalence ASSEMBLED, never judged
     assert "VacuHeal" in cer, "equivalence table must name the equivalent device"
@@ -192,7 +203,7 @@ def main():
 
     # references assembled from appraised records; incomplete record NOT a reference
     assert "[34763444]" in cer and "[37777272]" in cer
-    assert "99999" not in cer.split("## 10. References")[-1], \
+    assert "99999" not in cer.split("## 11. References")[-1], \
         "appraisal-incomplete record must not appear as an appraised reference"
 
     # PMS signal surfaced for triage (not concluded on)

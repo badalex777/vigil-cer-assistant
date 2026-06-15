@@ -727,17 +727,49 @@ def generate_cer_md(profile, run_id: str, appraised_records: list[dict],
         "conformity. Vigil does NOT write conclusions - it describes evidence."))
     a("")
 
-    a("## 9. Dates and signatures\n")
+    a("## 9. Date of next evaluation\n")
+    a("The CER is a living document and must be updated as new clinical data become "
+      "available through PMS and PMCF (MDR Art. 61, Annex XIV Part A).")
+    if profile.is_legacy_device or profile.is_well_established_technology:
+        a("\nThis device is characterised as a well-established technology / legacy "
+          "device. The update frequency may be less frequent than the annual cycle "
+          "required for Class III and implantable devices, BUT the chosen frequency must "
+          "be justified based on risk class and technology maturity - Notified Bodies "
+          "verify this justification (MDCG 2020-6).")
+    interval = getattr(profile, "next_evaluation_interval", "")
+    justif = getattr(profile, "next_evaluation_justification", "")
+    if interval or justif:
+        a("\n**Update frequency (defined by the PRRC):**")
+        a(f"- **Interval:** {interval or '[to be specified]'}")
+        a(f"- **Justification:** {justif or '[to be specified]'}")
+        a("- **Exact date of next evaluation:** fixed at sign-off, calculated from the "
+          "release date plus the interval above.")
+    else:
+        a(prrc_placeholder(
+            "Date of next evaluation and justification of update frequency",
+            "Set the update interval and justify it based on the device risk class, "
+            "technology maturity, rate of PMS/PMCF data accrual, and any emerging risks. "
+            "For non-Class III / non-implantable devices the manufacturer defines and "
+            "must justify this schedule (MDR Annex XIV Part A; MDCG 2020-6)."))
+    a("")
+
+    a("## 10. Dates and signatures\n")
     a(f"- **Evaluator (PRRC):** {profile.evaluator_name or '[to be completed]'}")
     a(f"- **Qualifications:** {profile.evaluator_qualifications or '[to be completed]'}")
     a(f"- **Declaration of interests:** {profile.declaration_of_interest_ref or '[to attach]'}")
     a("- **Statement of agreement:** [Evaluator to confirm agreement with the contents.]")
     a("- **Evaluator signature / date:** ______________________")
     a("- **Manufacturer final release (name / signature / date):** ______________________")
+    a("\n> **Evaluator qualification requirement (MDR; MDCG / Notified Body practice):** "
+      "The clinical evaluation must be performed and signed by an evaluator with "
+      "subject-matter expertise and **clinical specialty relevant to the device's "
+      "indication** - not regulatory-affairs staff alone. Notified Bodies flag CERs "
+      "lacking appropriate clinical input or documented evaluator independence. The PRRC "
+      "must ensure a suitably qualified clinical evaluator authors/co-signs this report.")
     a("\n*The CER must be dated, version-controlled, and signed by the evaluator with CV "
       "and declaration of interests (MEDDEV Section 11 / A9 item 7).*\n")
 
-    a("## 10. References\n")
+    a("## 11. References\n")
     refs = []
     for r in appraised_records:
         sid = r.get("pmid") or r.get("registry_id") or r.get("external_id") or "?"

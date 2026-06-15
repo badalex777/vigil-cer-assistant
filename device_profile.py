@@ -125,7 +125,13 @@ class DeviceProfile:
     alternative_treatments_strategy: str = ""   # MDR Art. 61(3)(c)
     pms_data_collection_strategy: str = ""       # continuing safety/performance
 
-    profile_version: str = "2.1"
+    # Update cycle (MDR Annex XIV Part A). The PRRC decides the frequency and justifies
+    # it up front (a planning decision, not an evidence-dependent judgement). The exact
+    # next date is fixed at sign-off; this captures the justified interval.
+    next_evaluation_interval: str = ""           # e.g. "24 months"
+    next_evaluation_justification: str = ""      # why this interval (risk class, WET, ...)
+
+    profile_version: str = "2.2"
 
     def criteria_for_track(self, track: str) -> tuple[list[str], list[str]]:
         """Return (inclusion, exclusion) criteria for a track, falling back to the
