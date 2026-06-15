@@ -59,6 +59,7 @@ label, .stTextInput label, .stTextArea label, .stSelectbox label,
 [data-baseweb="input"] input, [data-baseweb="textarea"] textarea {
   background: %(paper)s !important; color: %(ink)s !important;
   border: 1px solid %(line)s !important; border-radius: 4px !important;
+  caret-color: %(navy)s !important;
 }
 .stTextInput input::placeholder, .stTextArea textarea::placeholder {
   color: #9CA0A8 !important; opacity: 1;
@@ -129,6 +130,12 @@ label, .stTextInput label, .stTextArea label, .stSelectbox label,
   border-radius: 4px; padding: 0.7rem 1rem; font-size: 0.84rem; color: %(navy)s;
 }
 small, .muted { color: %(slate)s; }
+.sectionnote {
+  color: %(slate)s; font-size: 0.86rem; line-height: 1.5; margin: -0.2rem 0 0.8rem 0;
+  padding: 0.5rem 0.8rem; background: #FAFAF8; border-left: 2px solid %(line)s;
+  border-radius: 3px;
+}
+.sectionnote b { color: %(brown)s; }
 code { color: %(brown)s; background: #F2EFEA; }
 </style>
 """ % {"canvas": CANVAS, "ink": INK, "navy": NAVY, "brown": BROWN,
@@ -178,3 +185,8 @@ def disclaimer():
         'Vigil describes evidence; it does not conclude on safety, performance, '
         'equivalence, or conformity.</div>',
         unsafe_allow_html=True)
+
+
+def section_note(text: str):
+    """Render an explanatory note under a section header (for the PRRC using the tool)."""
+    st.markdown(f'<div class="sectionnote">{text}</div>', unsafe_allow_html=True)

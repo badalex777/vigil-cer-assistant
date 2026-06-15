@@ -75,6 +75,12 @@ def step_device_profile():
     d = ss.profile_dict or {}
 
     st.subheader("Device")
+    ui_theme.section_note(
+        "Identifies the device under evaluation and its risk class. The intended purpose "
+        "and indications define the <b>scope</b> of the whole clinical evaluation (MEDDEV "
+        "2.7/1 rev 4, Stage 0). Get this right: a scope that is too narrow misses relevant "
+        "data; too broad pulls in noise. The classification (MDR Annex VIII) sets how much "
+        "clinical evidence and scrutiny the Notified Body will expect.")
     c1, c2 = st.columns(2)
     device_name = c1.text_input("Device name", d.get("device_name", ""),
                                 placeholder="e.g. PortaVac NPWT System")
@@ -99,6 +105,12 @@ def step_device_profile():
         "controlled negative pressure.")
 
     st.subheader("Clinical scope")
+    ui_theme.section_note(
+        "These drive the search. The medical condition and technology category build the "
+        "<b>state-of-the-art (Track 2)</b> search; synonyms widen the <b>device-specific "
+        "(Track 1)</b> search so relevant papers are not missed. Both tracks are required "
+        "(MEDDEV A5.2). Be thorough here - an incomplete search is one of the most common "
+        "reasons a CER is flagged at Notified Body review.")
     medical_condition = st.text_input("Medical condition(s) - comma separated",
                                       ", ".join(d.get("medical_condition", [])),
                                       placeholder="e.g. chronic wounds, diabetic foot ulcers")
@@ -113,6 +125,11 @@ def step_device_profile():
                                     placeholder="e.g. NPWT, vacuum-assisted closure, VAC")
 
     st.subheader("Review questions (PICO)")
+    ui_theme.section_note(
+        "PICO = <b>P</b>opulation, <b>I</b>ntervention, <b>C</b>omparator, "
+        "<b>O</b>utcomes. It is the standard way to frame a focused, answerable clinical "
+        "review question (MEDDEV A5.2). It structures the search and tells a reviewer "
+        "exactly what clinical question the evidence is meant to answer.")
     cp1, cp2 = st.columns(2)
     pico_population = cp1.text_input("Population", d.get("pico_population", ""),
                                      placeholder="e.g. adults with chronic wounds")
@@ -125,14 +142,46 @@ def step_device_profile():
                                    placeholder="e.g. wound healing rate, adverse events")
 
     st.subheader("Search limits")
+    ui_theme.section_note(
+        "The date range and languages bound the search. These limits are documented in "
+        "the search protocol and report so the search is <b>reproducible</b> - a reviewer "
+        "must be able to repeat it and get the same results (MEDDEV A5.3). Justify a "
+        "narrow date range or a single language if you set one; restricting languages "
+        "without justification can be challenged as a source of bias.")
+    import datetime
+    def _parse_date(s, default):
+        try:
+            return datetime.date.fromisoformat(str(s).replace("/", "-"))
+        except (ValueError, AttributeError):
+            return default
     cl1, cl2, cl3 = st.columns(3)
-    date_from = cl1.text_input("Date from (YYYY/MM/DD)", d.get("date_from", "2015/01/01"))
-    date_to = cl2.text_input("Date to (YYYY/MM/DD)", d.get("date_to", "2025/12/31"))
-    languages = cl3.text_input("Languages", ", ".join(d.get("languages", ["English"])))
+    date_from_d = cl1.date_input(
+        "Date from", _parse_date(d.get("date_from", ""), datetime.date(2015, 1, 1)),
+        min_value=datetime.date(1990, 1, 1), max_value=datetime.date.today())
+    date_to_d = cl2.date_input(
+        "Date to", _parse_date(d.get("date_to", ""), datetime.date(2025, 12, 31)),
+        min_value=datetime.date(1990, 1, 1), max_value=datetime.date.today())
+    lang_opts = ["English", "Spanish", "French", "German", "Italian", "Dutch",
+                 "Portuguese", "Danish", "Swedish", "Norwegian", "Finnish"]
+    languages_sel = cl3.multiselect(
+        "Languages", lang_opts,
+        default=d.get("languages", ["English"]) or ["English"])
+    date_from = date_from_d.strftime("%Y/%m/%d")
+    date_to = date_to_d.strftime("%Y/%m/%d")
 
     st.subheader("Selection criteria")
-    st.markdown('<span class="muted">Locked at sign-off. One per line, per track.</span>',
-                unsafe_allow_html=True)
+    ui_theme.section_note(
+        "<b>What this is:</b> the rules that decide which papers from the search are kept "
+        "and which are discarded - inclusion criteria (a paper must meet these to be "
+        "included) and exclusion criteria (any of these removes it).<br>"
+        "<b>Why it matters:</b> MEDDEV requires these to be fixed <b>before</b> you see "
+        "the results. They are <b>locked at sign-off</b> (Step 3): once you lock the run "
+        "they cannot change, and the audit trail proves they did not change between "
+        "approval and the search. This prevents tuning the rules after the fact to favour "
+        "convenient papers - a search must capture all relevant data, favourable AND "
+        "unfavourable (MEDDEV 8.2).<br>"
+        "<b>How to fill it:</b> one criterion per line. Track 1 (your device) and Track 2 "
+        "(state of the art) can have different criteria, so they are entered separately.")
     t1inc = st.text_area("Track 1 (device-specific) - inclusion",
                          "\n".join(d.get("track1_inclusion_criteria",
                                          d.get("inclusion_criteria", []))), height=90,
@@ -153,49 +202,83 @@ def step_device_profile():
                          "Editorials or opinion pieces")
 
     st.subheader("Equivalence (MDCG 2020-5)")
+    ui_theme.section_note(
+        "Equivalence lets you use clinical data from another device to support yours. "
+        "Under MDR it is demanding: the devices must be similar across <b>three</b> "
+        "characteristics - technical, biological, and clinical (MDCG 2020-5) - and you "
+        "must <b>disclose every difference</b> and justify why it does not affect clinical "
+        "safety or performance. If the equivalent is made by another company, MDR normally "
+        "requires a contract giving you ongoing access to its technical documentation. "
+        "<b>Vigil assembles this comparison into the CER verbatim; it does not judge "
+        "whether equivalence holds - that determination is yours.</b> You can claim more "
+        "than one equivalent device.")
     equivalence_claimed = st.checkbox("Equivalence is claimed",
                                       value=d.get("equivalence_claimed", False))
     equivalent_devices = []
     if equivalence_claimed:
-        existing = d.get("equivalent_devices", [{}])
-        eq = existing[0] if existing else {}
-        st.markdown('<span class="muted">Vigil assembles this into the CER verbatim and '
-                    'does not judge whether equivalence holds - that is your '
-                    'determination.</span>', unsafe_allow_html=True)
-        eq_name = st.text_input("Equivalent device name", eq.get("name", ""),
-                                placeholder="e.g. VacuHeal Pro NPWT System")
-        eq_model = st.text_input("Equivalent device model/identifier", eq.get("model", ""),
-                                 placeholder="e.g. VH-2000")
-        eq_tech = st.text_area("Technical characteristics - justification",
-                               eq.get("technical_characteristics", ""), height=80,
-                               placeholder="e.g. Same operating principle (controlled "
-                               "sub-atmospheric pressure), comparable pressure range.")
-        eq_bio = st.text_area("Biological characteristics - justification",
-                              eq.get("biological_characteristics", ""), height=80,
-                              placeholder="e.g. Same wound-contacting materials; "
-                              "equivalent biocompatibility profile.")
-        eq_clin = st.text_area("Clinical characteristics - justification",
-                               eq.get("clinical_characteristics", ""), height=80,
-                               placeholder="e.g. Same indication, population, and "
-                               "conditions of use.")
-        eq_diff = st.text_area("Differences disclosed + justification (disclose ALL)",
-                               eq.get("differences_and_justification", ""), height=80,
-                               placeholder="e.g. Minor foam pore-size difference; not "
-                               "expected to affect clinical performance or safety.")
-        eq_access = st.text_area("Access to the equivalent's technical documentation",
-                                 eq.get("technical_documentation_access", ""), height=60,
-                                 placeholder="e.g. Public IFU and published literature "
-                                 "only - no contractual access to technical file.")
-        equivalent_devices = [{
-            "name": eq_name, "model": eq_model,
-            "technical_characteristics": eq_tech,
-            "biological_characteristics": eq_bio,
-            "clinical_characteristics": eq_clin,
-            "differences_and_justification": eq_diff,
-            "technical_documentation_access": eq_access,
-        }]
+        # number of equivalents tracked in session; seed from existing profile
+        if "n_equivalents" not in ss:
+            existing = d.get("equivalent_devices", [])
+            ss.n_equivalents = max(1, len(existing))
+        existing = d.get("equivalent_devices", [])
+        for i in range(ss.n_equivalents):
+            eq = existing[i] if i < len(existing) else {}
+            st.markdown(f'**Equivalent device {i + 1}**')
+            eq_name = st.text_input("Equivalent device name", eq.get("name", ""),
+                                    placeholder="e.g. VacuHeal Pro NPWT System",
+                                    key=f"eq_name_{i}")
+            eq_model = st.text_input("Equivalent device model/identifier",
+                                     eq.get("model", ""), placeholder="e.g. VH-2000",
+                                     key=f"eq_model_{i}")
+            eq_tech = st.text_area("Technical characteristics - justification",
+                                   eq.get("technical_characteristics", ""), height=80,
+                                   placeholder="e.g. Same operating principle (controlled "
+                                   "sub-atmospheric pressure), comparable pressure range.",
+                                   key=f"eq_tech_{i}")
+            eq_bio = st.text_area("Biological characteristics - justification",
+                                  eq.get("biological_characteristics", ""), height=80,
+                                  placeholder="e.g. Same wound-contacting materials; "
+                                  "equivalent biocompatibility profile.", key=f"eq_bio_{i}")
+            eq_clin = st.text_area("Clinical characteristics - justification",
+                                   eq.get("clinical_characteristics", ""), height=80,
+                                   placeholder="e.g. Same indication, population, and "
+                                   "conditions of use.", key=f"eq_clin_{i}")
+            eq_diff = st.text_area("Differences disclosed + justification (disclose ALL)",
+                                   eq.get("differences_and_justification", ""), height=80,
+                                   placeholder="e.g. Minor foam pore-size difference; not "
+                                   "expected to affect clinical performance or safety.",
+                                   key=f"eq_diff_{i}")
+            eq_access = st.text_area("Access to the equivalent's technical documentation",
+                                     eq.get("technical_documentation_access", ""),
+                                     height=60, placeholder="e.g. Public IFU and published "
+                                     "literature only - no contractual access to technical "
+                                     "file.", key=f"eq_access_{i}")
+            equivalent_devices.append({
+                "name": eq_name, "model": eq_model,
+                "technical_characteristics": eq_tech,
+                "biological_characteristics": eq_bio,
+                "clinical_characteristics": eq_clin,
+                "differences_and_justification": eq_diff,
+                "technical_documentation_access": eq_access,
+            })
+            st.markdown('<hr class="rule"/>', unsafe_allow_html=True)
+        ceq1, ceq2 = st.columns([1, 1])
+        if ceq1.button("+ Add another equivalent device"):
+            ss.n_equivalents += 1
+            st.rerun()
+        if ss.n_equivalents > 1 and ceq2.button("- Remove last equivalent device"):
+            ss.n_equivalents -= 1
+            st.rerun()
 
     st.subheader("Legacy device & update cycle")
+    ui_theme.section_note(
+        "A <b>legacy device</b> was CE-marked under the old directives (MDD/AIMDD) and is "
+        "transitioning to MDR; it gets extra requirements under MDCG 2020-6. A "
+        "<b>well-established technology (WET)</b> is a mature, stable, widely-used design "
+        "with a long safety history (e.g. NPWT) - WET status can justify a less frequent "
+        "update cycle. The CER is a living document: you set the <b>update interval</b> "
+        "and must justify it by risk class and technology maturity (MDR Annex XIV); "
+        "Notified Bodies check that justification.")
     cleg1, cleg2 = st.columns(2)
     is_legacy = cleg1.checkbox("Legacy device (MDD/AIMDD, MDR transition)",
                                value=d.get("is_legacy_device", False))
@@ -211,6 +294,17 @@ def step_device_profile():
                                "trigger an earlier update on any emerging signal.")
     req_evidence = alt_strategy = pms_strategy = ""
     if is_legacy:
+        ui_theme.section_note(
+            "These three fields are required for legacy devices (MDCG 2020-6 Appendix II):"
+            "<br><b>Required level of clinical evidence</b> - <i>MDR Article 61(1)</i> says "
+            "the manufacturer must define how much clinical evidence is enough for this "
+            "specific device and its intended purpose. You state that level here."
+            "<br><b>Alternative treatments strategy</b> - <i>MDR Article 61(3)(c)</i> "
+            "requires you to identify and assess other available treatments for the "
+            "condition, so the device is judged against the current standard of care."
+            "<br><b>PMS data collection strategy</b> - how you systematically gather "
+            "post-market surveillance data to show the device stays safe and performs "
+            "over time (MDCG 2020-6).")
         req_evidence = st.text_area("Required level of clinical evidence (MDR Art. 61(1))",
                                     d.get("required_level_of_clinical_evidence", ""),
                                     height=60,
@@ -227,9 +321,15 @@ def step_device_profile():
                                     "the Vigil PMS Monitor handoff feeding the CER cycle.")
 
     st.subheader("Evaluator")
-    st.markdown('<span class="muted">Must have clinical specialty relevant to the '
-                'device\'s indication - not regulatory-affairs staff alone.</span>',
-                unsafe_allow_html=True)
+    ui_theme.section_note(
+        "The person who reviews and signs the CER. MDR and Notified Body practice require "
+        "an evaluator with <b>clinical specialty relevant to the device's indication</b> "
+        "- not regulatory-affairs staff alone. CERs have been rejected for lacking "
+        "appropriate clinical input.<br><b>Declaration of interests reference</b>: the "
+        "evaluator must declare any conflicts of interest (e.g. payment from, or a "
+        "financial stake in, the manufacturer) in a separate signed document. This field "
+        "just records a reference/ID to that document (e.g. a filename or code) so the CER "
+        "can point to it - you do not write the declaration itself here.")
     ce1, ce2 = st.columns(2)
     evaluator_name = ce1.text_input("Evaluator name", d.get("evaluator_name", ""),
                                     placeholder="e.g. Dr. Jane Smith")
@@ -237,7 +337,8 @@ def step_device_profile():
                                      d.get("evaluator_qualifications", ""),
                                      placeholder="e.g. MD, wound care / tissue viability, "
                                      "8 yrs clinical experience")
-    doi_ref = st.text_input("Declaration of interests reference",
+    doi_ref = st.text_input("Declaration of interests reference (document ID, not the "
+                            "declaration itself)",
                             d.get("declaration_of_interest_ref", ""),
                             placeholder="e.g. DOI-2026-001")
 
@@ -256,7 +357,7 @@ def step_device_profile():
             "technology_category": _split(technology_category),
             "therapeutic_area": _split(therapeutic_area),
             "date_from": date_from, "date_to": date_to,
-            "languages": _split(languages) or ["English"],
+            "languages": languages_sel or ["English"],
             "track1_inclusion_criteria": _lines(t1inc),
             "track1_exclusion_criteria": _lines(t1exc),
             "track2_inclusion_criteria": _lines(t2inc),
