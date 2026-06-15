@@ -142,6 +142,17 @@ def log(db_path: str, run_id: str, stage: str, message: str):
                   (run_id, time.time(), stage, message))
 
 
+def get_run_log(db_path: str, run_id: str) -> list:
+    """Return the append-only event log for a run, oldest first, as dicts
+    {ts, stage, message}. Feeds the Audit Trail export."""
+    with connect(db_path) as c:
+        rows = c.execute(
+            "SELECT ts, stage, message FROM run_log WHERE run_id=? ORDER BY ts ASC",
+            (run_id,)).fetchall()
+        return [{"ts": r["ts"], "stage": r["stage"], "message": r["message"]}
+                for r in rows]
+
+
 def start_run(db_path: str, run_id: str, profile):
     with connect(db_path) as c:
         c.execute(

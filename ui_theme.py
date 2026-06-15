@@ -45,6 +45,26 @@ h1 { font-weight: 700; font-size: 1.9rem; }
 h2 { font-weight: 600; font-size: 1.35rem; margin-top: 0.4rem; }
 h3 { font-weight: 600; font-size: 1.1rem; color: %(brown)s; }
 
+/* section subheaders (st.subheader renders an h3) must be visible on cream */
+[data-testid="stHeading"] h1, [data-testid="stHeading"] h2,
+[data-testid="stHeading"] h3 { color: %(navy)s !important; }
+
+/* field labels - dark, legible on the cream canvas */
+[data-testid="stWidgetLabel"] label, [data-testid="stWidgetLabel"] p,
+label, .stTextInput label, .stTextArea label, .stSelectbox label,
+.stCheckbox label { color: %(ink)s !important; font-weight: 500; opacity: 1 !important; }
+
+/* input fields - white surface, dark text, hairline border */
+.stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div,
+[data-baseweb="input"] input, [data-baseweb="textarea"] textarea {
+  background: %(paper)s !important; color: %(ink)s !important;
+  border: 1px solid %(line)s !important; border-radius: 4px !important;
+}
+.stTextInput input::placeholder, .stTextArea textarea::placeholder {
+  color: #9CA0A8 !important; opacity: 1;
+}
+.stSelectbox div[data-baseweb="select"] * { color: %(ink)s !important; }
+
 /* the Vigil wordmark */
 .vigil-mark {
   font-family: 'Source Serif 4', serif; font-weight: 700; font-size: 1.5rem;
