@@ -10,6 +10,7 @@ each step is plain Python and must be correct before a live demo:
 
 Run: python tests/test_wizard_logic.py
 """
+import io
 import os
 import sys
 import tempfile
@@ -142,6 +143,17 @@ def main():
     # the whole set shares one run id
     for doc in (cep, sp, sr, tm, cer):
         assert run_id in doc
+
+    # docx export: every narrative document converts to a valid .docx
+    import docx_export
+    from docx import Document as _Docx
+    for md, title in [(cep, "CEP"), (sp, "Protocol"), (sr, "Report"),
+                      (tm, "Matrix"), (cer, "CER")]:
+        data = docx_export.md_to_docx_bytes(md, title)
+        assert data[:2] == b"PK", f"{title} docx is not a valid zip/docx"
+        d = _Docx(io.BytesIO(data))
+        assert len(d.paragraphs) > 5, f"{title} docx has too little content"
+    print("  docx export: all five narrative docs render to valid .docx OK")
 
     print("All wizard-logic assertions passed.")
     print("  form dict -> valid DeviceProfile (v2.2, equivalence, legacy) OK")

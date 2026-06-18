@@ -113,10 +113,37 @@ label, .stTextInput label, .stTextArea label, .stSelectbox label,
 
 /* primary button */
 .stButton > button {
-  background: %(navy)s; color: #fff; border: none; border-radius: 4px;
+  background: %(navy)s !important; color: #fff !important; border: none; border-radius: 4px;
   padding: 0.5rem 1.2rem; font-weight: 600; font-size: 0.9rem;
 }
-.stButton > button:hover { background: #16223c; color: #fff; }
+.stButton > button:hover { background: #16223c !important; color: #fff !important; }
+.stButton > button p, .stButton > button div, .stButton > button span {
+  color: #fff !important;
+}
+/* download button - same treatment so it is never transparent */
+.stDownloadButton > button {
+  background: %(navy)s !important; color: #fff !important; border: none;
+  border-radius: 4px; font-weight: 600;
+}
+.stDownloadButton > button:hover { background: #16223c !important; color: #fff !important; }
+.stDownloadButton > button p { color: #fff !important; }
+
+/* expander header - visible without hover (was transparent) */
+[data-testid="stExpander"] summary, .streamlit-expanderHeader,
+[data-testid="stExpander"] details summary {
+  background: %(paper)s !important; color: %(navy)s !important;
+  border: 1px solid %(line)s !important; border-radius: 4px !important;
+  font-weight: 600; padding: 0.5rem 0.9rem !important;
+}
+[data-testid="stExpander"] summary:hover { background: #F0EFEB !important; }
+[data-testid="stExpander"] summary p, [data-testid="stExpander"] summary span {
+  color: %(navy)s !important;
+}
+[data-testid="stExpander"] { border: none !important; }
+
+/* multiselect tags - readable */
+[data-baseweb="tag"] { background: %(navy)s !important; }
+[data-baseweb="tag"] span { color: #fff !important; }
 
 /* disclaimer banner */
 .disclaimer {
@@ -136,6 +163,21 @@ small, .muted { color: %(slate)s; }
   border-radius: 3px;
 }
 .sectionnote b { color: %(brown)s; }
+.loadingcard {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 2.5rem 1rem; background: %(paper)s; border: 1px solid %(line)s;
+  border-radius: 6px; margin: 1rem 0;
+}
+.loadingcard .spinner {
+  width: 38px; height: 38px; border: 3px solid %(line)s; border-top-color: %(navy)s;
+  border-radius: 50%%; animation: vigilspin 0.9s linear infinite; margin-bottom: 1rem;
+}
+@keyframes vigilspin { to { transform: rotate(360deg); } }
+.loadingcard .loadtitle {
+  font-family: 'Source Serif 4', serif; font-size: 1.2rem; font-weight: 600;
+  color: %(navy)s;
+}
+.loadingcard .loadsub { color: %(slate)s; font-size: 0.88rem; margin-top: 0.3rem; }
 code { color: %(brown)s; background: #F2EFEA; }
 </style>
 """ % {"canvas": CANVAS, "ink": INK, "navy": NAVY, "brown": BROWN,
@@ -190,3 +232,13 @@ def disclaimer():
 def section_note(text: str):
     """Render an explanatory note under a section header (for the PRRC using the tool)."""
     st.markdown(f'<div class="sectionnote">{text}</div>', unsafe_allow_html=True)
+
+
+def loading_card(placeholder, title="Searching", subtitle=""):
+    """Render a clean, branded loading state (no raw logs) into a placeholder."""
+    placeholder.markdown(
+        f'<div class="loadingcard">'
+        f'<div class="spinner"></div>'
+        f'<div class="loadtitle">{title}</div>'
+        f'<div class="loadsub">{subtitle}</div>'
+        f'</div>', unsafe_allow_html=True)

@@ -134,6 +134,50 @@ def connect(db_path: str):
 def init_db(db_path: str):
     with connect(db_path) as c:
         c.executescript(SCHEMA)
+    _migrate_schema(db_path)
+
+
+# Columns the code expects on `records`, with their SQL definitions. If an older
+# database is missing any (created before these were added), add them in place so
+# the app does not fail on "no such column". Safe to run on every init.
+_RECORDS_EXPECTED_COLUMNS = {
+    "track": "TEXT",
+    "title": "TEXT",
+    "abstract": "TEXT",
+    "journal": "TEXT",
+    "year": "TEXT",
+    "doi": "TEXT",
+    "source": "TEXT DEFAULT 'pubmed'",
+    "entry_type": "TEXT DEFAULT 'paper'",
+    "screen_verdict": "TEXT",
+    "screen_rationale": "TEXT",
+    "screen_model": "TEXT",
+    "retrieval_status": "TEXT DEFAULT 'abstract_only'",
+    "retrieval_source": "TEXT",
+    "retrieval_url": "TEXT",
+    "verification_result": "TEXT",
+    "verification_score": "REAL",
+    "verification_reason": "TEXT",
+    "appraisal_mode": "TEXT DEFAULT 'abstract'",
+    "appraisal_status": "TEXT DEFAULT 'pending'",
+    "fulltext_path": "TEXT",
+    "extraction_json": "TEXT",
+}
+
+
+def _migrate_schema(db_path: str):
+    """Add any missing expected columns to existing tables (idempotent)."""
+    with connect(db_path) as c:
+        existing = {row["name"] for row in
+                    c.execute("PRAGMA table_info(records)").fetchall()}
+        if not existing:
+            return  # table will have been created fresh with the full schema
+        for col, ddl in _RECORDS_EXPECTED_COLUMNS.items():
+            if col not in existing:
+                try:
+                    c.execute(f"ALTER TABLE records ADD COLUMN {col} {ddl}")
+                except Exception:
+                    pass  # column added concurrently or not critical
 
 
 def log(db_path: str, run_id: str, stage: str, message: str):

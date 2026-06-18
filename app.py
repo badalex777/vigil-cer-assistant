@@ -69,10 +69,15 @@ def _lines(s):
 # =============================================================================
 def step_device_profile():
     st.header("1. Device Profile")
+    if ss.get("_readonly"):
+        st.markdown('<div class="disclaimer"><b>Read-only view.</b> This run is locked; '
+                    'the values below are the frozen scope and cannot be edited. Start a '
+                    'new evaluation to change anything.</div>', unsafe_allow_html=True)
     st.markdown('<span class="muted">Define the device and the scope of the clinical '
                 'evaluation. This scope is frozen when you lock the run, so it is fully '
                 'auditable.</span>', unsafe_allow_html=True)
     d = ss.profile_dict or {}
+    _ro = ss.get("_readonly", False)
 
     st.subheader("Device")
     ui_theme.section_note(
@@ -83,26 +88,26 @@ def step_device_profile():
         "clinical evidence and scrutiny the Notified Body will expect.")
     c1, c2 = st.columns(2)
     device_name = c1.text_input("Device name", d.get("device_name", ""),
-                                placeholder="e.g. PortaVac NPWT System")
+                                placeholder="e.g. PortaVac NPWT System", disabled=_ro)
     manufacturer = c2.text_input("Manufacturer", d.get("manufacturer", ""),
-                                 placeholder="e.g. Acme Medical Devices Ltd")
+                                 placeholder="e.g. Acme Medical Devices Ltd", disabled=_ro)
     c3, c4 = st.columns(2)
     cls_opts = ["Class IIa", "Class IIb", "Class I", "Class III"]
     classification = c3.selectbox(
         "Classification", cls_opts,
         index=cls_opts.index(d.get("classification", "Class IIb"))
-        if d.get("classification") in cls_opts else 1)
+        if d.get("classification") in cls_opts else 1, disabled=_ro)
     classification_rule = c4.text_input("Classification rule (MDR Annex VIII)",
                                         d.get("classification_rule", ""),
-                                        placeholder="e.g. Rule 11")
+                                        placeholder="e.g. Rule 11", disabled=_ro)
     device_description = st.text_area(
         "Device description", d.get("device_description", ""), height=80,
         placeholder="e.g. Portable single-use negative pressure wound therapy system "
-        "delivering controlled sub-atmospheric pressure to the wound bed.")
+        "delivering controlled sub-atmospheric pressure to the wound bed.", disabled=_ro)
     intended_purpose = st.text_area(
         "Intended purpose", d.get("intended_purpose", ""), height=80,
         placeholder="e.g. Promotion of wound healing in chronic and acute wounds via "
-        "controlled negative pressure.")
+        "controlled negative pressure.", disabled=_ro)
 
     st.subheader("Clinical scope")
     ui_theme.section_note(
@@ -113,16 +118,16 @@ def step_device_profile():
         "reasons a CER is flagged at Notified Body review.")
     medical_condition = st.text_input("Medical condition(s) - comma separated",
                                       ", ".join(d.get("medical_condition", [])),
-                                      placeholder="e.g. chronic wounds, diabetic foot ulcers")
+                                      placeholder="e.g. chronic wounds, diabetic foot ulcers", disabled=_ro)
     technology_category = st.text_input("Technology category - comma separated",
                                         ", ".join(d.get("technology_category", [])),
-                                        placeholder="e.g. negative pressure wound therapy")
+                                        placeholder="e.g. negative pressure wound therapy", disabled=_ro)
     therapeutic_area = st.text_input("Therapeutic area - comma separated",
                                      ", ".join(d.get("therapeutic_area", [])),
-                                     placeholder="e.g. wound care, tissue viability")
+                                     placeholder="e.g. wound care, tissue viability", disabled=_ro)
     device_synonyms = st.text_input("Device synonyms / search terms - comma separated",
                                     ", ".join(d.get("device_synonyms", [])),
-                                    placeholder="e.g. NPWT, vacuum-assisted closure, VAC")
+                                    placeholder="e.g. NPWT, vacuum-assisted closure, VAC", disabled=_ro)
 
     st.subheader("Review questions (PICO)")
     ui_theme.section_note(
@@ -132,14 +137,14 @@ def step_device_profile():
         "exactly what clinical question the evidence is meant to answer.")
     cp1, cp2 = st.columns(2)
     pico_population = cp1.text_input("Population", d.get("pico_population", ""),
-                                     placeholder="e.g. adults with chronic wounds")
+                                     placeholder="e.g. adults with chronic wounds", disabled=_ro)
     pico_intervention = cp2.text_input("Intervention", d.get("pico_intervention", ""),
-                                       placeholder="e.g. negative pressure wound therapy")
+                                       placeholder="e.g. negative pressure wound therapy", disabled=_ro)
     cp3, cp4 = st.columns(2)
     pico_comparator = cp3.text_input("Comparator", d.get("pico_comparator", ""),
-                                     placeholder="e.g. standard wound dressings")
+                                     placeholder="e.g. standard wound dressings", disabled=_ro)
     pico_outcomes = cp4.text_input("Outcomes", d.get("pico_outcomes", ""),
-                                   placeholder="e.g. wound healing rate, adverse events")
+                                   placeholder="e.g. wound healing rate, adverse events", disabled=_ro)
 
     st.subheader("Search limits")
     ui_theme.section_note(
@@ -157,15 +162,15 @@ def step_device_profile():
     cl1, cl2, cl3 = st.columns(3)
     date_from_d = cl1.date_input(
         "Date from", _parse_date(d.get("date_from", ""), datetime.date(2015, 1, 1)),
-        min_value=datetime.date(1990, 1, 1), max_value=datetime.date.today())
+        min_value=datetime.date(1990, 1, 1), max_value=datetime.date.today(), disabled=_ro)
     date_to_d = cl2.date_input(
         "Date to", _parse_date(d.get("date_to", ""), datetime.date(2025, 12, 31)),
-        min_value=datetime.date(1990, 1, 1), max_value=datetime.date.today())
+        min_value=datetime.date(1990, 1, 1), max_value=datetime.date.today(), disabled=_ro)
     lang_opts = ["English", "Spanish", "French", "German", "Italian", "Dutch",
                  "Portuguese", "Danish", "Swedish", "Norwegian", "Finnish"]
     languages_sel = cl3.multiselect(
         "Languages", lang_opts,
-        default=d.get("languages", ["English"]) or ["English"])
+        default=d.get("languages", ["English"]) or ["English"], disabled=_ro)
     date_from = date_from_d.strftime("%Y/%m/%d")
     date_to = date_to_d.strftime("%Y/%m/%d")
 
@@ -186,20 +191,20 @@ def step_device_profile():
                          "\n".join(d.get("track1_inclusion_criteria",
                                          d.get("inclusion_criteria", []))), height=90,
                          placeholder="e.g. Human clinical study of the device or equivalent\n"
-                         "Reports clinical safety or performance outcomes")
+                         "Reports clinical safety or performance outcomes", disabled=_ro)
     t1exc = st.text_area("Track 1 (device-specific) - exclusion",
                          "\n".join(d.get("track1_exclusion_criteria",
                                          d.get("exclusion_criteria", []))), height=90,
                          placeholder="e.g. Animal or in vitro studies only\n"
-                         "Non-English without translation")
+                         "Non-English without translation", disabled=_ro)
     t2inc = st.text_area("Track 2 (state of the art) - inclusion",
                          "\n".join(d.get("track2_inclusion_criteria", [])), height=90,
                          placeholder="e.g. Characterises current standard of care for "
-                         "the condition\nGuidelines or systematic reviews")
+                         "the condition\nGuidelines or systematic reviews", disabled=_ro)
     t2exc = st.text_area("Track 2 (state of the art) - exclusion",
                          "\n".join(d.get("track2_exclusion_criteria", [])), height=90,
                          placeholder="e.g. Not relevant to the medical condition\n"
-                         "Editorials or opinion pieces")
+                         "Editorials or opinion pieces", disabled=_ro)
 
     st.subheader("Equivalence (MDCG 2020-5)")
     ui_theme.section_note(
@@ -213,7 +218,7 @@ def step_device_profile():
         "whether equivalence holds - that determination is yours.</b> You can claim more "
         "than one equivalent device.")
     equivalence_claimed = st.checkbox("Equivalence is claimed",
-                                      value=d.get("equivalence_claimed", False))
+                                      value=d.get("equivalence_claimed", False), disabled=_ro)
     equivalent_devices = []
     if equivalence_claimed:
         # number of equivalents tracked in session; seed from existing profile
@@ -226,33 +231,33 @@ def step_device_profile():
             st.markdown(f'**Equivalent device {i + 1}**')
             eq_name = st.text_input("Equivalent device name", eq.get("name", ""),
                                     placeholder="e.g. VacuHeal Pro NPWT System",
-                                    key=f"eq_name_{i}")
+                                    key=f"eq_name_{i}", disabled=_ro)
             eq_model = st.text_input("Equivalent device model/identifier",
                                      eq.get("model", ""), placeholder="e.g. VH-2000",
-                                     key=f"eq_model_{i}")
+                                     key=f"eq_model_{i}", disabled=_ro)
             eq_tech = st.text_area("Technical characteristics - justification",
                                    eq.get("technical_characteristics", ""), height=80,
                                    placeholder="e.g. Same operating principle (controlled "
                                    "sub-atmospheric pressure), comparable pressure range.",
-                                   key=f"eq_tech_{i}")
+                                   key=f"eq_tech_{i}", disabled=_ro)
             eq_bio = st.text_area("Biological characteristics - justification",
                                   eq.get("biological_characteristics", ""), height=80,
                                   placeholder="e.g. Same wound-contacting materials; "
-                                  "equivalent biocompatibility profile.", key=f"eq_bio_{i}")
+                                  "equivalent biocompatibility profile.", key=f"eq_bio_{i}", disabled=_ro)
             eq_clin = st.text_area("Clinical characteristics - justification",
                                    eq.get("clinical_characteristics", ""), height=80,
                                    placeholder="e.g. Same indication, population, and "
-                                   "conditions of use.", key=f"eq_clin_{i}")
+                                   "conditions of use.", key=f"eq_clin_{i}", disabled=_ro)
             eq_diff = st.text_area("Differences disclosed + justification (disclose ALL)",
                                    eq.get("differences_and_justification", ""), height=80,
                                    placeholder="e.g. Minor foam pore-size difference; not "
                                    "expected to affect clinical performance or safety.",
-                                   key=f"eq_diff_{i}")
+                                   key=f"eq_diff_{i}", disabled=_ro)
             eq_access = st.text_area("Access to the equivalent's technical documentation",
                                      eq.get("technical_documentation_access", ""),
                                      height=60, placeholder="e.g. Public IFU and published "
                                      "literature only - no contractual access to technical "
-                                     "file.", key=f"eq_access_{i}")
+                                     "file.", key=f"eq_access_{i}", disabled=_ro)
             equivalent_devices.append({
                 "name": eq_name, "model": eq_model,
                 "technical_characteristics": eq_tech,
@@ -281,17 +286,17 @@ def step_device_profile():
         "Notified Bodies check that justification.")
     cleg1, cleg2 = st.columns(2)
     is_legacy = cleg1.checkbox("Legacy device (MDD/AIMDD, MDR transition)",
-                               value=d.get("is_legacy_device", False))
+                               value=d.get("is_legacy_device", False), disabled=_ro)
     is_wet = cleg2.checkbox("Well-established technology (WET)",
-                            value=d.get("is_well_established_technology", False))
+                            value=d.get("is_well_established_technology", False), disabled=_ro)
     next_interval = st.text_input("Next-evaluation interval (you define & justify)",
                                   d.get("next_evaluation_interval", ""),
-                                  placeholder="e.g. 24 months")
+                                  placeholder="e.g. 24 months", disabled=_ro)
     next_justif = st.text_area("Justification of the update interval",
                                d.get("next_evaluation_justification", ""), height=70,
                                placeholder="e.g. Well-established technology with a "
                                "stable design and continuous PMS monitoring that would "
-                               "trigger an earlier update on any emerging signal.")
+                               "trigger an earlier update on any emerging signal.", disabled=_ro)
     req_evidence = alt_strategy = pms_strategy = ""
     if is_legacy:
         ui_theme.section_note(
@@ -309,16 +314,16 @@ def step_device_profile():
                                     d.get("required_level_of_clinical_evidence", ""),
                                     height=60,
                                     placeholder="e.g. Cumulative appraised literature plus "
-                                    "PMS data, to be confirmed sufficient by the PRRC.")
+                                    "PMS data, to be confirmed sufficient by the PRRC.", disabled=_ro)
         alt_strategy = st.text_area(
             "Strategy to identify & assess alternative treatments (MDR Art. 61(3)(c))",
             d.get("alternative_treatments_strategy", ""), height=60,
             placeholder="e.g. Track 2 search plus clinical practice guidelines to "
-            "benchmark against current standard of care.")
+            "benchmark against current standard of care.", disabled=_ro)
         pms_strategy = st.text_area("PMS data collection strategy (MDCG 2020-6)",
                                     d.get("pms_data_collection_strategy", ""), height=60,
                                     placeholder="e.g. Continuous signal monitoring via "
-                                    "the Vigil PMS Monitor handoff feeding the CER cycle.")
+                                    "the Vigil PMS Monitor handoff feeding the CER cycle.", disabled=_ro)
 
     st.subheader("Evaluator")
     ui_theme.section_note(
@@ -332,17 +337,24 @@ def step_device_profile():
         "can point to it - you do not write the declaration itself here.")
     ce1, ce2 = st.columns(2)
     evaluator_name = ce1.text_input("Evaluator name", d.get("evaluator_name", ""),
-                                    placeholder="e.g. Dr. Jane Smith")
+                                    placeholder="e.g. Dr. Jane Smith", disabled=_ro)
     evaluator_quals = ce2.text_input("Evaluator qualifications / clinical specialty",
                                      d.get("evaluator_qualifications", ""),
                                      placeholder="e.g. MD, wound care / tissue viability, "
-                                     "8 yrs clinical experience")
+                                     "8 yrs clinical experience", disabled=_ro)
     doi_ref = st.text_input("Declaration of interests reference (document ID, not the "
                             "declaration itself)",
                             d.get("declaration_of_interest_ref", ""),
-                            placeholder="e.g. DOI-2026-001")
+                            placeholder="e.g. DOI-2026-001", disabled=_ro)
 
     st.markdown('<hr class="rule"/>', unsafe_allow_html=True)
+    if _ro:
+        st.markdown('<span class="muted">Read-only: changes cannot be saved on a locked '
+                    'run.</span>', unsafe_allow_html=True)
+        if st.button("Back to current step"):
+            ss.step = 3 if ss.phase_a is None else (5 if ss.phase_b else 4)
+            st.rerun()
+        return
     if st.button("Save profile and continue"):
         if not device_name.strip():
             st.error("Device name is required.")
@@ -389,6 +401,11 @@ def step_device_profile():
 # =============================================================================
 def step_review_search():
     st.header("2. Review & Approve Search")
+    _ro = ss.get("_readonly", False)
+    if _ro:
+        st.markdown('<div class="disclaimer"><b>Read-only view.</b> These are the approved '
+                    'search strings frozen for this locked run.</div>',
+                    unsafe_allow_html=True)
     profile = _profile_from_state()
     if ss.queries is None:
         ss.queries = pubmed.build_track_queries(profile)
@@ -398,9 +415,16 @@ def step_review_search():
                 'device and any claimed equivalent; Track 2 the state of the art.</span>',
                 unsafe_allow_html=True)
     t1 = st.text_area("Track 1 - device-specific (PubMed syntax)",
-                      ss.queries["device_specific"], height=120)
+                      ss.queries["device_specific"], height=120, disabled=_ro)
     t2 = st.text_area("Track 2 - state of the art (PubMed syntax)",
-                      ss.queries["state_of_art"], height=120)
+                      ss.queries["state_of_art"], height=120, disabled=_ro)
+
+    if _ro:
+        st.markdown('<hr class="rule"/>', unsafe_allow_html=True)
+        if st.button("Back to current step"):
+            ss.step = 3 if ss.phase_a is None else (5 if ss.phase_b else 4)
+            st.rerun()
+        return
 
     if st.button("Preview hit counts (free - no cost)"):
         ss.queries = {"device_specific": t1, "state_of_art": t2}
@@ -446,16 +470,29 @@ def step_lock_and_start():
                 unsafe_allow_html=True)
 
     st.subheader("Subscription databases (optional)")
-    st.markdown('<span class="muted">If you have Embase or Cochrane access, run the '
-                'equivalent search in your own subscription, export as RIS, and add it '
-                'here. Paste the EXACT query you ran - it is recorded in the CEP and '
-                'search report. Vigil cannot connect to these databases directly (their '
-                'licences do not permit it), so you own and run that search.</span>',
-                unsafe_allow_html=True)
+    ui_theme.section_note(
+        "<b>What this is:</b> PubMed and ClinicalTrials.gov are searched automatically. "
+        "Embase and the Cochrane Library are subscription databases Vigil cannot connect "
+        "to directly (their licences do not allow programmatic access), so if your search "
+        "protocol includes them, you run that search yourself and add the results here."
+        "<br><b>When you need it:</b> only if your CEP/search protocol commits to searching "
+        "Embase or Cochrane. For many Class IIa/IIb devices PubMed + CT.gov is sufficient; "
+        "the PRRC decides whether additional databases are required for completeness."
+        "<br><b>How to do it:</b> (1) run your search in Embase/Cochrane; (2) export the "
+        "results as an <b>RIS</b> file (every database has an Export &gt; RIS option); "
+        "(3) upload that file below and paste the <b>exact</b> query string you ran. "
+        "Vigil parses each reference into the same screening pipeline (dedup, screen, "
+        "appraise) as PubMed."
+        "<br><b>Why the exact query is mandatory:</b> it is written verbatim into the CEP "
+        "and the search report so the search is reproducible and auditable. A search "
+        "report that names a database without its query is an incomplete record and a "
+        "common Notified Body finding.")
     with st.expander("Add a subscription-database export"):
         src = st.text_input("Source label (e.g. Embase, Cochrane)", key="ris_src")
         exact_q = st.text_area("Exact search string you ran in that database",
-                               key="ris_q", height=80)
+                               key="ris_q", height=80,
+                               placeholder="e.g. ('negative pressure wound therapy'/exp OR "
+                               "npwt) AND ('chronic wound'/exp) AND [2015-2025]/py")
         ris_file = st.file_uploader("RIS export file", type=["ris", "txt"], key="ris_file")
         if st.button("Add this export"):
             if ris_file and src.strip():
@@ -500,42 +537,19 @@ def step_research():
     profile = _profile_from_state()
 
     if ss.cep_md:
-        st.download_button("Download Clinical Evaluation Plan (CEP)", ss.cep_md,
-                           file_name="01_Clinical_Evaluation_Plan.md",
-                           mime="text/markdown")
+        import docx_export
+        cep_docx = docx_export.md_to_docx_bytes(ss.cep_md, "Clinical Evaluation Plan")
+        st.download_button(
+            "Download Clinical Evaluation Plan (CEP)", cep_docx,
+            file_name="01_Clinical_Evaluation_Plan.docx",
+            mime=("application/vnd.openxmlformats-officedocument."
+                  "wordprocessingml.document"))
         st.markdown('<span class="muted">The CEP was generated at lock, before any '
                     'results - it documents the planned scope.</span>',
                     unsafe_allow_html=True)
 
-    if ss.phase_a is None:
-        st.markdown('<div class="locknote">Running comprehensive retrieval across PubMed '
-                    'and ClinicalTrials.gov, then abstract screening. This can take '
-                    'several minutes on a full search.</div>', unsafe_allow_html=True)
-        if st.button("Run Phase A (search + screen)"):
-            log_box = st.empty()
-            lines = []
-
-            def progress(s):
-                lines.append(s)
-                log_box.code("\n".join(lines[-16:]))
-
-            db.mark_running(config.DB_PATH, ss.run_id,
-                            actor=profile.evaluator_name or "PRRC")
-            with st.spinner("Phase A running..."):
-                out = pipeline.run_search_and_screen(
-                    profile, db_path=config.DB_PATH, retmax=DEMO_RETMAX,
-                    comprehensive=(DEMO_RETMAX is None), include_ctgov=True,
-                    progress=progress)
-                if ss.ris_uploads:
-                    merged = 0
-                    for u in ss.ris_uploads:
-                        for r in u["records"]:
-                            db.upsert_record(config.DB_PATH, ss.run_id, r)
-                            merged += 1
-                    progress(f"Merged {merged} subscription-database references.")
-            ss.phase_a = out
-            st.rerun()
-    else:
+    # Phase A already finished (persisted in session) -> show the summary, never re-run.
+    if ss.phase_a is not None:
         out = ss.phase_a
         c = out["counts"]
         st.markdown(
@@ -544,12 +558,80 @@ def step_research():
             f'<div class="chip"><div class="k">Auto-appraised</div><div class="v">{c.get("included",0)}</div></div>'
             f'<div class="chip"><div class="k">For upload</div><div class="v">{len(out["manual_upload_list"])}</div></div>'
             f'</div>', unsafe_allow_html=True)
-        st.success("Phase A complete. Open-access papers were retrieved and appraised.")
+        st.success("Phase A complete. Open-access papers were retrieved and appraised. "
+                   "You can download the CEP above without affecting this run.")
         if st.button("Continue to Phase B"):
-            db.mark_phase_b(config.DB_PATH, ss.run_id,
-                            actor=profile.evaluator_name or "PRRC")
+            # idempotent: only advance if not already past running
+            try:
+                if db.current_state(config.DB_PATH, ss.run_id) == "running":
+                    db.mark_phase_b(config.DB_PATH, ss.run_id,
+                                    actor=profile.evaluator_name or "PRRC")
+            except Exception:
+                pass
             goto(4)
             st.rerun()
+        return
+
+    # A run is mid-flight (e.g. the script re-ran because of a download click).
+    # Do NOT start a second run; tell the user it is in progress.
+    if ss.get("_phase_a_running"):
+        st.markdown('<div class="locknote">Phase A is running. Please wait for it to '
+                    'finish - downloading the CEP or interacting with the page will not '
+                    'restart it.</div>', unsafe_allow_html=True)
+        st.info("If this message persists after several minutes, reload the page; the run "
+                "state is saved and you can resume.")
+        return
+
+    # Not started yet -> offer to run.
+    st.markdown('<div class="locknote">Running comprehensive retrieval across PubMed '
+                'and ClinicalTrials.gov, then abstract screening. This can take '
+                'several minutes on a full search.</div>', unsafe_allow_html=True)
+    if st.button("Run Phase A (search + screen)"):
+        ss._phase_a_running = True
+        load_box = st.empty()
+        ui_theme.loading_card(load_box, "Searching",
+                              "Retrieving and screening the literature...")
+
+        def progress(s):
+            # translate backend log lines into a clean, human-readable status
+            s_low = s.lower()
+            if "pubmed" in s_low:
+                msg = "Searching PubMed..."
+            elif "clinicaltrials" in s_low or "ctgov" in s_low or "ct.gov" in s_low:
+                msg = "Searching ClinicalTrials.gov..."
+            elif "dedup" in s_low or "duplicate" in s_low:
+                msg = "Removing duplicate records..."
+            elif "screen" in s_low:
+                msg = "Screening abstracts for relevance..."
+            elif "merg" in s_low:
+                msg = "Adding subscription-database references..."
+            elif "apprais" in s_low or "retriev" in s_low:
+                msg = "Retrieving and appraising open-access papers..."
+            else:
+                msg = "Working..."
+            ui_theme.loading_card(load_box, "Searching", msg)
+
+        try:
+            # idempotent transition: only mark_running if not already running
+            if db.current_state(config.DB_PATH, ss.run_id) != "running":
+                db.mark_running(config.DB_PATH, ss.run_id,
+                                actor=profile.evaluator_name or "PRRC")
+            out = pipeline.run_search_and_screen(
+                profile, db_path=config.DB_PATH, retmax=DEMO_RETMAX,
+                comprehensive=(DEMO_RETMAX is None), include_ctgov=True,
+                progress=progress)
+            if ss.ris_uploads:
+                merged = 0
+                for u in ss.ris_uploads:
+                    for r in u["records"]:
+                        db.upsert_record(config.DB_PATH, ss.run_id, r)
+                        merged += 1
+                progress(f"Merged {merged} subscription-database references.")
+            ss.phase_a = out
+        finally:
+            ss._phase_a_running = False
+            load_box.empty()
+        st.rerun()
 
 
 # =============================================================================
@@ -584,21 +666,32 @@ def step_phase_b():
     label = "Run full-text appraisal & build documents" if manual else \
             "Build the document set"
     if st.button(label):
-        log_box = st.empty()
-        lines = []
+        load_box = st.empty()
+        ui_theme.loading_card(load_box, "Appraising",
+                              "Reviewing full-text papers and building documents...")
 
         def progress(s):
-            lines.append(s)
-            log_box.code("\n".join(lines[-16:]))
+            s_low = s.lower()
+            if "apprais" in s_low:
+                msg = "Appraising full-text papers..."
+            elif "extract" in s_low:
+                msg = "Extracting evidence and outcomes..."
+            elif "document" in s_low or "build" in s_low:
+                msg = "Building the document set..."
+            else:
+                msg = "Working..."
+            ui_theme.loading_card(load_box, "Appraising", msg)
 
-        with st.spinner("Phase B running (full-text appraisal via Opus)..."):
+        try:
             pb = pipeline.run_fulltext_appraisal(
                 profile, ss.run_id, uploads, db_path=config.DB_PATH,
                 duplicates=out.get("_duplicates", 0), queries=ss.queries,
                 progress=progress)
-        ss.phase_b = pb
-        db.mark_complete(config.DB_PATH, ss.run_id,
-                         actor=profile.evaluator_name or "PRRC")
+            ss.phase_b = pb
+            db.mark_complete(config.DB_PATH, ss.run_id,
+                             actor=profile.evaluator_name or "PRRC")
+        finally:
+            load_box.empty()
         goto(5)
         st.rerun()
 
@@ -642,28 +735,38 @@ def step_documents():
     cer = outputs.generate_cer_md(profile, run_id, appraised, incomplete,
                                   pms_signals=[], counts=pc, scope_hash=scope_hash)
 
-    docs = [
-        ("01_Clinical_Evaluation_Plan.md", cep),
-        ("02_Literature_Search_Protocol.md", sp),
-        ("03_Literature_Search_Report.md", sr),
-        ("04_CER_First_Draft.md", cer),
-        ("05_Evidence_Traceability_Matrix.md", tm),
-        ("06_Audit_Trail.csv", audit),
+    # 5 narrative documents -> Word (.docx); audit trail stays CSV (data export)
+    import docx_export
+    word_docs = [
+        ("01_Clinical_Evaluation_Plan.docx", cep, "Clinical Evaluation Plan"),
+        ("02_Literature_Search_Protocol.docx", sp, "Literature Search Protocol"),
+        ("03_Literature_Search_Report.docx", sr, "Literature Search Report"),
+        ("04_CER_First_Draft.docx", cer, "CER First Draft"),
+        ("05_Evidence_Traceability_Matrix.docx", tm, "Evidence Traceability Matrix"),
     ]
+    DOCX_MIME = ("application/vnd.openxmlformats-officedocument."
+                 "wordprocessingml.document")
 
     st.markdown('<span class="muted">Six audit-ready documents, each carrying the same '
                 'control block (run, scope hash, version) tying them to this immutable '
-                'run. All are first drafts for PRRC review and sign-off.</span>',
-                unsafe_allow_html=True)
-    for name, content in docs:
-        st.download_button(f"Download {name}", content, file_name=name,
-                           mime="text/csv" if name.endswith(".csv") else "text/markdown",
-                           key=f"dl_{name}")
+                'run. Five are Word documents for PRRC review and sign-off; the audit '
+                'trail is a CSV data export.</span>', unsafe_allow_html=True)
+
+    built = []  # (filename, bytes, mime)
+    with st.spinner("Building Word documents..."):
+        for fname, md, title in word_docs:
+            data = docx_export.md_to_docx_bytes(md, title)
+            built.append((fname, data, DOCX_MIME))
+    built.append(("06_Audit_Trail.csv", audit.encode("utf-8"), "text/csv"))
+
+    for fname, data, mime in built:
+        st.download_button(f"Download {fname}", data, file_name=fname, mime=mime,
+                           key=f"dl_{fname}")
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for name, content in docs:
-            z.writestr(name, content)
+        for fname, data, _ in built:
+            z.writestr(fname, data)
     st.download_button("Download all 6 documents (.zip)", buf.getvalue(),
                        file_name=f"Vigil_CER_set_{run_id}.zip", mime="application/zip")
 
@@ -680,6 +783,34 @@ def step_documents():
 # =============================================================================
 ui_theme.header()
 ui_theme.stepper(ss.step)
+
+# Once a run is locked, the scope is frozen. Allow READ-ONLY navigation back to
+# review what was entered, but ONLY to steps that are reachable (have data) - never
+# forward into a step whose inputs do not exist yet.
+_is_locked = ss.run_id is not None
+if _is_locked:
+    st.markdown('<div class="locknote">This run is <b>locked</b> - the scope is frozen '
+                'and cannot be changed. You can review earlier steps in read-only mode. '
+                'To change anything, start a new evaluation.</div>',
+                unsafe_allow_html=True)
+    # determine the furthest step the run has actually reached
+    if ss.phase_b is not None:
+        max_step = 5
+    elif ss.phase_a is not None:
+        max_step = 4   # Phase A done -> Phase B is available
+    else:
+        max_step = 3   # locked, search not yet run -> up to Research
+    labels = ["1 Profile", "2 Search", "3 Lock", "4 Research", "5 Phase B", "6 Docs"]
+    reachable = [i for i in range(6) if i <= max_step]
+    nav = st.columns(len(reachable))
+    for col, i in zip(nav, reachable):
+        if col.button(labels[i], key=f"nav_{i}"):
+            ss.step = i
+            st.rerun()
+
+ss.setdefault("_readonly", False)
+ss._readonly = _is_locked and ss.step in (0, 1)  # steps 1-2 are read-only once locked
+
 _STEPS = [step_device_profile, step_review_search, step_lock_and_start,
           step_research, step_phase_b, step_documents]
 _STEPS[ss.step]()
