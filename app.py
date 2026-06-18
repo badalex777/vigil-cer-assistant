@@ -17,6 +17,8 @@ Six steps, mapped to the run state machine:
 import os
 import io
 import zipfile
+import threading
+import time
 
 import streamlit as st
 
@@ -44,8 +46,51 @@ ss.setdefault("phase_a", None)
 ss.setdefault("phase_b", None)
 ss.setdefault("cep_md", None)
 ss.setdefault("ris_uploads", [])
+ss.setdefault("_phase_a_thread", None)   # background thread for Phase A
+ss.setdefault("_phase_a_result", None)   # shared result dict written by the thread
 
 DEMO_RETMAX = int(os.getenv("VIGIL_DEMO_RETMAX", "0")) or None  # internal; 0 = comprehensive
+
+
+def _run_phase_a_bg(profile, run_id, db_path, retmax, ris_uploads, result):
+    """Run Phase A pipeline in a background thread, independent of Streamlit's execution.
+    Writes output or error into the shared result dict when done.
+    The main thread polls result['done'] via session state to know when to read the output.
+    """
+    try:
+        out = pipeline.run_search_and_screen(
+            profile, db_path=db_path, retmax=retmax,
+            comprehensive=(retmax is None), include_ctgov=True,
+            progress=lambda s: None)
+        if ris_uploads:
+            for u in ris_uploads:
+                for r in u["records"]:
+                    db.upsert_record(db_path, run_id, r)
+        result["output"] = out
+    except Exception as e:
+        result["error"] = str(e)
+    finally:
+        result["done"] = True
+
+# Rotating messages shown on the loading screen during Phase A and Phase B.
+# Each message is displayed for ~10 seconds before fading to the next.
+_PHASE_A_MESSAGES = [
+    "Searching PubMed for device-specific literature...",
+    "Vigil runs two parallel tracks: device-specific and state of the art.",
+    "Searching ClinicalTrials.gov for registered trials...",
+    "Every search string is locked before retrieval - no post-hoc changes.",
+    "Deduplicating records across all sources...",
+    "AI screens each abstract against your inclusion and exclusion criteria.",
+    "Open-access papers are retrieved automatically for full-text appraisal.",
+    "The search report will document every record retrieved, screened, and excluded.",
+]
+_PHASE_B_MESSAGES = [
+    "Appraising full-text papers with Claude Opus...",
+    "Vigil extracts outcomes, adverse events, and study design from each paper.",
+    "Every appraised paper is traced to the final CER by PMID and DOI.",
+    "Paywalled papers flagged as appraisal incomplete - never silently skipped.",
+    "Building the six audit-ready documents...",
+]
 
 
 def goto(step):
@@ -536,6 +581,7 @@ def step_research():
     st.header("4. Research in Progress")
     profile = _profile_from_state()
 
+    # CEP always downloadable from the moment the run is locked.
     if ss.cep_md:
         import docx_export
         cep_docx = docx_export.md_to_docx_bytes(ss.cep_md, "Clinical Evaluation Plan")
@@ -544,24 +590,27 @@ def step_research():
             file_name="01_Clinical_Evaluation_Plan.docx",
             mime=("application/vnd.openxmlformats-officedocument."
                   "wordprocessingml.document"))
-        st.markdown('<span class="muted">The CEP was generated at lock, before any '
-                    'results - it documents the planned scope.</span>',
-                    unsafe_allow_html=True)
+        st.markdown('<span class="muted">Generated at lock, before any results - '
+                    'it documents the planned scope.</span>', unsafe_allow_html=True)
 
-    # Phase A already finished (persisted in session) -> show the summary, never re-run.
+    # ------------------------------------------------------------------ #
+    # CASE 1: Phase A already done (result persisted in session).        #
+    # ------------------------------------------------------------------ #
     if ss.phase_a is not None:
         out = ss.phase_a
         c = out["counts"]
         st.markdown(
             f'<div class="chips">'
-            f'<div class="chip"><div class="k">Screened</div><div class="v">{c.get("screened",0)}</div></div>'
-            f'<div class="chip"><div class="k">Auto-appraised</div><div class="v">{c.get("included",0)}</div></div>'
-            f'<div class="chip"><div class="k">For upload</div><div class="v">{len(out["manual_upload_list"])}</div></div>'
+            f'<div class="chip"><div class="k">Screened</div>'
+            f'<div class="v">{c.get("screened", 0)}</div></div>'
+            f'<div class="chip"><div class="k">Auto-appraised</div>'
+            f'<div class="v">{c.get("included", 0)}</div></div>'
+            f'<div class="chip"><div class="k">For upload</div>'
+            f'<div class="v">{len(out["manual_upload_list"])}</div></div>'
             f'</div>', unsafe_allow_html=True)
-        st.success("Phase A complete. Open-access papers were retrieved and appraised. "
-                   "You can download the CEP above without affecting this run.")
+        st.success("Phase A complete. Download the CEP above at any time - it will "
+                   "not affect this run.")
         if st.button("Continue to Phase B"):
-            # idempotent: only advance if not already past running
             try:
                 if db.current_state(config.DB_PATH, ss.run_id) == "running":
                     db.mark_phase_b(config.DB_PATH, ss.run_id,
@@ -572,65 +621,58 @@ def step_research():
             st.rerun()
         return
 
-    # A run is mid-flight (e.g. the script re-ran because of a download click).
-    # Do NOT start a second run; tell the user it is in progress.
-    if ss.get("_phase_a_running"):
-        st.markdown('<div class="locknote">Phase A is running. Please wait for it to '
-                    'finish - downloading the CEP or interacting with the page will not '
-                    'restart it.</div>', unsafe_allow_html=True)
-        st.info("If this message persists after several minutes, reload the page; the run "
-                "state is saved and you can resume.")
-        return
+    # ------------------------------------------------------------------ #
+    # CASE 2: Background thread exists - check its state.                #
+    # ------------------------------------------------------------------ #
+    thread = ss._phase_a_thread
+    result = ss._phase_a_result
 
-    # Not started yet -> offer to run.
-    st.markdown('<div class="locknote">Running comprehensive retrieval across PubMed '
-                'and ClinicalTrials.gov, then abstract screening. This can take '
-                'several minutes on a full search.</div>', unsafe_allow_html=True)
+    if thread is not None:
+        if not thread.is_alive():
+            # Thread just finished - read the result.
+            if result and result.get("error"):
+                st.error(f"Search failed: {result['error']}")
+                if st.button("Retry"):
+                    ss._phase_a_thread = None
+                    ss._phase_a_result = None
+                    st.rerun()
+                return
+            if result and result.get("done") and result.get("output") is not None:
+                # Save to session and rerun to show the summary.
+                ss.phase_a = result["output"]
+                ss._phase_a_thread = None
+                ss._phase_a_result = None
+                st.rerun()
+                return
+        else:
+            # Thread is still alive - show loading card and poll every 3 seconds.
+            load_box = st.empty()
+            ui_theme.loading_card(load_box, "Searching", _PHASE_A_MESSAGES)
+            st.info("Searching in the background. You can review earlier steps "
+                    "while you wait - the search will not be interrupted.")
+            time.sleep(3)
+            st.rerun()
+            return
+
+    # ------------------------------------------------------------------ #
+    # CASE 3: Not started yet - offer the run button.                    #
+    # ------------------------------------------------------------------ #
+    st.markdown('<div class="locknote">Vigil will retrieve and screen all records '
+                'across PubMed and ClinicalTrials.gov. This can take several minutes '
+                'on a full search.</div>', unsafe_allow_html=True)
     if st.button("Run Phase A (search + screen)"):
-        ss._phase_a_running = True
-        load_box = st.empty()
-        ui_theme.loading_card(load_box, "Searching",
-                              "Retrieving and screening the literature...")
-
-        def progress(s):
-            # translate backend log lines into a clean, human-readable status
-            s_low = s.lower()
-            if "pubmed" in s_low:
-                msg = "Searching PubMed..."
-            elif "clinicaltrials" in s_low or "ctgov" in s_low or "ct.gov" in s_low:
-                msg = "Searching ClinicalTrials.gov..."
-            elif "dedup" in s_low or "duplicate" in s_low:
-                msg = "Removing duplicate records..."
-            elif "screen" in s_low:
-                msg = "Screening abstracts for relevance..."
-            elif "merg" in s_low:
-                msg = "Adding subscription-database references..."
-            elif "apprais" in s_low or "retriev" in s_low:
-                msg = "Retrieving and appraising open-access papers..."
-            else:
-                msg = "Working..."
-            ui_theme.loading_card(load_box, "Searching", msg)
-
-        try:
-            # idempotent transition: only mark_running if not already running
-            if db.current_state(config.DB_PATH, ss.run_id) != "running":
-                db.mark_running(config.DB_PATH, ss.run_id,
-                                actor=profile.evaluator_name or "PRRC")
-            out = pipeline.run_search_and_screen(
-                profile, db_path=config.DB_PATH, retmax=DEMO_RETMAX,
-                comprehensive=(DEMO_RETMAX is None), include_ctgov=True,
-                progress=progress)
-            if ss.ris_uploads:
-                merged = 0
-                for u in ss.ris_uploads:
-                    for r in u["records"]:
-                        db.upsert_record(config.DB_PATH, ss.run_id, r)
-                        merged += 1
-                progress(f"Merged {merged} subscription-database references.")
-            ss.phase_a = out
-        finally:
-            ss._phase_a_running = False
-            load_box.empty()
+        if db.current_state(config.DB_PATH, ss.run_id) != "running":
+            db.mark_running(config.DB_PATH, ss.run_id,
+                            actor=profile.evaluator_name or "PRRC")
+        result = {"done": False, "output": None, "error": None}
+        ss._phase_a_result = result
+        t = threading.Thread(
+            target=_run_phase_a_bg,
+            args=(profile, ss.run_id, config.DB_PATH, DEMO_RETMAX,
+                  list(ss.ris_uploads), result),
+            daemon=True)
+        t.start()
+        ss._phase_a_thread = t
         st.rerun()
 
 
@@ -667,20 +709,10 @@ def step_phase_b():
             "Build the document set"
     if st.button(label):
         load_box = st.empty()
-        ui_theme.loading_card(load_box, "Appraising",
-                              "Reviewing full-text papers and building documents...")
+        ui_theme.loading_card(load_box, "Appraising", _PHASE_B_MESSAGES)
 
         def progress(s):
-            s_low = s.lower()
-            if "apprais" in s_low:
-                msg = "Appraising full-text papers..."
-            elif "extract" in s_low:
-                msg = "Extracting evidence and outcomes..."
-            elif "document" in s_low or "build" in s_low:
-                msg = "Building the document set..."
-            else:
-                msg = "Working..."
-            ui_theme.loading_card(load_box, "Appraising", msg)
+            pass  # messages rotate via CSS
 
         try:
             pb = pipeline.run_fulltext_appraisal(
@@ -773,7 +805,8 @@ def step_documents():
     st.markdown('<hr class="rule"/>', unsafe_allow_html=True)
     if st.button("Start a new evaluation"):
         for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
-                  "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads"]:
+                  "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
+                  "_phase_a_thread", "_phase_a_result"]:
             ss.pop(k, None)
         st.rerun()
 
@@ -800,7 +833,7 @@ if _is_locked:
         max_step = 4   # Phase A done -> Phase B is available
     else:
         max_step = 3   # locked, search not yet run -> up to Research
-    labels = ["1 Profile", "2 Search", "3 Lock", "4 Research", "5 Phase B", "6 Docs"]
+    labels = ["1 Device Profile", "2 Search", "3 Lock", "4 Research", "5 Phase B", "6 Docs"]
     reachable = [i for i in range(6) if i <= max_step]
     nav = st.columns(len(reachable))
     for col, i in zip(nav, reachable):
