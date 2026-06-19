@@ -145,6 +145,21 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
 
     records, dups = pubmed.dedup(t1 + t2 + ctgov_records + ris_records)
     progress(f"Deduplicated: {len(records)} unique ({dups} duplicates removed)")
+
+    # Cost circuit-breaker: screening bills one Sonnet call per record. In
+    # non-comprehensive mode an unexpectedly large dedup set means something is
+    # wrong (e.g. an accidental uncapped run); abort BEFORE any screening call
+    # rather than silently spending $10-20. Comprehensive mode is a deliberate
+    # opt-in and is exempt.
+    if not comprehensive and len(records) > config.MAX_SCREEN_RECORDS:
+        msg = (f"Aborting before screening: {len(records)} records exceed the "
+               f"safety ceiling of {config.MAX_SCREEN_RECORDS} (non-comprehensive "
+               f"mode). Refine the search to narrow scope, or set "
+               f"VIGIL_COMPREHENSIVE=1 to run a deliberate comprehensive screen.")
+        progress(msg)
+        db.log(db_path, run_id, "abort", msg)
+        raise RuntimeError(msg)
+
     for r in records:
         db.upsert_record(db_path, run_id, r)
     db.log(db_path, run_id, "search",

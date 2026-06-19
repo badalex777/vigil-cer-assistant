@@ -86,6 +86,13 @@ DB_PATH = os.getenv("VIGIL_DB", "vigil.db")
 MAX_HITS_PER_TRACK = int(os.getenv("VIGIL_MAX_HITS_PER_TRACK", "2000"))
 EFETCH_BATCH = int(os.getenv("VIGIL_EFETCH_BATCH", "200"))
 
+# Hard circuit-breaker on screening cost. Screening bills one Sonnet call per
+# deduplicated record, so an accidental comprehensive run (thousands of hits)
+# can cost $10-20 before anyone notices. In NON-comprehensive mode, if dedup
+# yields more than this ceiling we ABORT before any screening call fires.
+# Comprehensive mode is an explicit, deliberate opt-in and bypasses this.
+MAX_SCREEN_RECORDS = int(os.getenv("VIGIL_MAX_SCREEN_RECORDS", "800"))
+
 # --- Prompt template versions (external, versioned) ---------------------------
 PROMPT_SCREEN   = "prompts/screen_v1.txt"
 PROMPT_EXTRACT  = "prompts/extract_v1.txt"
