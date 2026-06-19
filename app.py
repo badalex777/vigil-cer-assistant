@@ -57,11 +57,13 @@ def _run_phase_a_bg(profile, run_id, db_path, retmax, ris_uploads, result):
     Writes output or error into the shared result dict when done.
     The main thread polls result['done'] via session state to know when to read the output.
     """
+    prog = _make_progress_writer(result)
     try:
+        result["progress"] = {"pct": 0.01, "msg": "Starting search..."}
         out = pipeline.run_search_and_screen(
             profile, db_path=db_path, retmax=retmax,
             comprehensive=(retmax is None), include_ctgov=True,
-            progress=lambda s: None)
+            progress=prog)
         if ris_uploads:
             for u in ris_uploads:
                 for r in u["records"]:
@@ -71,6 +73,81 @@ def _run_phase_a_bg(profile, run_id, db_path, retmax, ris_uploads, result):
         result["error"] = str(e)
     finally:
         result["done"] = True
+
+
+# Maps pipeline progress() string prefixes to (percentage, display message).
+# Screening (50-78%) is handled per-paper inside _make_progress_writer.
+_PHASE_A_STAGE_MAP = [
+    ("Building two-track",                  0.02, "Building search queries from Device Profile..."),
+    ("Track 1 (device-specific)",           0.05, "Searching PubMed - device-specific track..."),
+    ("  Track 1:",                          0.22, "PubMed Track 1 complete. Starting Track 2..."),
+    ("Track 2 (state of the art)",          0.24, "Searching PubMed - state of the art track..."),
+    ("  Track 2:",                          0.38, "PubMed Track 2 complete."),
+    ("ClinicalTrials.gov - search",         0.40, "Searching ClinicalTrials.gov..."),
+    ("  ClinicalTrials.gov:",               0.45, "ClinicalTrials.gov complete."),
+    ("Deduplicated",                        0.48, "Removing duplicates across all sources..."),
+    ("Screening abstracts",                 0.50, "Screening abstracts for relevance (AI)..."),
+    ("Abstract-level extraction",           0.78, "Extracting evidence from included papers..."),
+    ("Auto-retrieving",                     0.83, "Retrieving open-access full texts..."),
+    ("Verifying identity",                  0.90, "Verifying retrieved document identity..."),
+    ("Verification:",                       0.92, "Verification complete."),
+    ("Full-text appraisal on verified",     0.94, "Appraising full texts (Claude Opus)..."),
+    ("Building outputs",                    0.98, "Building audit-ready document set..."),
+    ("Phase A done",                        1.00, "Search and screening complete."),
+]
+
+
+def _make_progress_writer(result):
+    """Returns a progress(str) callable that maps pipeline strings to (pct, msg)
+    and writes them into result['progress'] for the UI fragment to read."""
+    state = {"pct": 0.0}
+
+    def _write(msg: str):
+        pct = state["pct"]
+        display = msg
+
+        # Per-paper screening progress: "Screened N/M records"
+        if msg.startswith("Screened "):
+            try:
+                parts = msg.split()
+                done, total = int(parts[1].split("/")[0]), int(parts[1].split("/")[1])
+                # Screening occupies 50-78% of the bar
+                pct = 0.50 + (done / total) * 0.28
+                display = f"Screening abstracts...  {done} / {total}"
+            except Exception:
+                pct = 0.52
+                display = "Screening abstracts for relevance..."
+        else:
+            for prefix, stage_pct, stage_msg in _PHASE_A_STAGE_MAP:
+                if msg.startswith(prefix) and stage_pct is not None:
+                    if stage_pct >= state["pct"]:
+                        pct = stage_pct
+                        display = stage_msg
+                    break
+
+        state["pct"] = max(state["pct"], pct)
+        result["progress"] = {"pct": min(state["pct"], 0.99), "msg": display}
+
+    return _write
+
+
+@st.fragment(run_every=2)
+def _phase_a_progress_fragment():
+    """Runs every 2 seconds independently - ONLY this block re-executes.
+    The rest of the page (header, stepper, device profile, etc.) stays frozen.
+    When the thread finishes, triggers a full app rerun to show the summary."""
+    result = ss._phase_a_result or {}
+    thread = ss._phase_a_thread
+
+    # Thread done? Trigger full app rerun so step_research transitions to summary.
+    if result.get("done") or (thread is not None and not thread.is_alive()):
+        st.rerun(scope="app")
+        return
+
+    prog = result.get("progress", {})
+    pct = float(prog.get("pct", 0.0))
+    msg = prog.get("msg", "Starting...")
+    st.progress(min(pct, 0.99), text=msg)
 
 # Rotating messages shown on the loading screen during Phase A and Phase B.
 # Each message is displayed for ~10 seconds before fading to the next.
@@ -471,7 +548,7 @@ def step_review_search():
             st.rerun()
         return
 
-    if st.button("Preview hit counts (free - no cost)"):
+    if st.button("Preview hit counts"):
         ss.queries = {"device_specific": t1, "state_of_art": t2}
         with st.spinner("Querying PubMed for counts..."):
             try:
@@ -507,8 +584,35 @@ def step_review_search():
 # STEP 3 - LOCK & START
 # =============================================================================
 def step_lock_and_start():
-    st.header("3. Lock & Start")
     profile = _profile_from_state()
+    _is_locked_step = ss.run_id is not None
+
+    st.header("3. Lock & Start")
+
+    # ------------------------------------------------------------------
+    # READ-ONLY: run is already locked - show what was committed.
+    # ------------------------------------------------------------------
+    if _is_locked_step:
+        st.markdown('<div class="disclaimer"><b>Read-only view.</b> This run is locked. '
+                    'The scope and databases below are frozen for this '
+                    'evaluation.</div>', unsafe_allow_html=True)
+        if ss.ris_uploads:
+            st.markdown("**Subscription databases included in this run:**")
+            for u in ss.ris_uploads:
+                st.markdown(f"- **{u['source']}**: {u['n']} references "
+                            + ("(query recorded)" if u.get("query", "").strip()
+                               else "(no query recorded)"))
+        else:
+            st.markdown("_No subscription database exports were added for this run._")
+        st.markdown('<hr class="rule"/>', unsafe_allow_html=True)
+        if st.button("Back to current step"):
+            ss.step = 3 if ss.phase_a is None else (5 if ss.phase_b else 4)
+            st.rerun()
+        return
+
+    # ------------------------------------------------------------------
+    # NORMAL: pre-lock flow
+    # ------------------------------------------------------------------
     st.markdown('<div class="locknote">Locking freezes the scope and the approved search '
                 'strings. After locking, the scope cannot change - this is what makes the '
                 'evaluation auditable. The CEP is generated the moment you lock.</div>',
@@ -570,7 +674,19 @@ def step_lock_and_start():
         db.lock_run(config.DB_PATH, run_id, ss.scope_hash, actor=actor)
         ss.cep_md = outputs.generate_cep_md(profile, run_id, approved_queries=ss.queries,
                                             scope_hash=ss.scope_hash)
-        goto(3)
+        # Mark DB as running and launch background thread immediately.
+        db.mark_running(config.DB_PATH, run_id, actor=actor)
+        result = {"done": False, "output": None, "error": None,
+                  "progress": {"pct": 0.01, "msg": "Starting search..."}}
+        ss._phase_a_result = result
+        t = threading.Thread(
+            target=_run_phase_a_bg,
+            args=(profile, run_id, config.DB_PATH, DEMO_RETMAX,
+                  list(ss.ris_uploads), result),
+            daemon=True)
+        t.start()
+        ss._phase_a_thread = t
+        goto(3)  # go straight to Research in Progress
         st.rerun()
 
 
@@ -608,8 +724,7 @@ def step_research():
             f'<div class="chip"><div class="k">For upload</div>'
             f'<div class="v">{len(out["manual_upload_list"])}</div></div>'
             f'</div>', unsafe_allow_html=True)
-        st.success("Phase A complete. Download the CEP above at any time - it will "
-                   "not affect this run.")
+        st.success("Phase A complete. Download the CEP above at any time.")
         if st.button("Continue to Phase B"):
             try:
                 if db.current_state(config.DB_PATH, ss.run_id) == "running":
@@ -629,7 +744,7 @@ def step_research():
 
     if thread is not None:
         if not thread.is_alive():
-            # Thread just finished - read the result.
+            # Thread just finished - collect the result on this run.
             if result and result.get("error"):
                 st.error(f"Search failed: {result['error']}")
                 if st.button("Retry"):
@@ -638,42 +753,25 @@ def step_research():
                     st.rerun()
                 return
             if result and result.get("done") and result.get("output") is not None:
-                # Save to session and rerun to show the summary.
                 ss.phase_a = result["output"]
                 ss._phase_a_thread = None
                 ss._phase_a_result = None
                 st.rerun()
                 return
-        else:
-            # Thread is still alive - show loading card and poll every 3 seconds.
-            load_box = st.empty()
-            ui_theme.loading_card(load_box, "Searching", _PHASE_A_MESSAGES)
-            st.info("Searching in the background. You can review earlier steps "
-                    "while you wait - the search will not be interrupted.")
-            time.sleep(3)
-            st.rerun()
-            return
+
+        # Thread alive (or just finished but output not yet copied): show loading.
+        # The loading card renders ONCE here; CSS handles the rotating messages.
+        # The fragment below re-runs every 2s to update ONLY the progress bar.
+        load_box = st.empty()
+        ui_theme.loading_card(load_box, "Searching", _PHASE_A_MESSAGES)
+        _phase_a_progress_fragment()
+        return
 
     # ------------------------------------------------------------------ #
-    # CASE 3: Not started yet - offer the run button.                    #
+    # CASE 3: No thread - shouldn't reach here post-Lock, but safety net #
     # ------------------------------------------------------------------ #
-    st.markdown('<div class="locknote">Vigil will retrieve and screen all records '
-                'across PubMed and ClinicalTrials.gov. This can take several minutes '
-                'on a full search.</div>', unsafe_allow_html=True)
-    if st.button("Run Phase A (search + screen)"):
-        if db.current_state(config.DB_PATH, ss.run_id) != "running":
-            db.mark_running(config.DB_PATH, ss.run_id,
-                            actor=profile.evaluator_name or "PRRC")
-        result = {"done": False, "output": None, "error": None}
-        ss._phase_a_result = result
-        t = threading.Thread(
-            target=_run_phase_a_bg,
-            args=(profile, ss.run_id, config.DB_PATH, DEMO_RETMAX,
-                  list(ss.ris_uploads), result),
-            daemon=True)
-        t.start()
-        ss._phase_a_thread = t
-        st.rerun()
+    st.info("The search has not started. Go back to step 3 and click "
+            "'Lock scope & start research'.")
 
 
 # =============================================================================

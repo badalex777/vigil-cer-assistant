@@ -40,14 +40,21 @@ def screen_record(profile, rec, call=None) -> dict:
     return {"verdict": verdict, "rationale": result.get("rationale", "")}
 
 
-def run(db_path, run_id, profile, records, call=None):
+def run(db_path, run_id, profile, records, call=None, progress=None):
     call = call or call_json
+    progress = progress or (lambda s: None)
     counts = {"include": 0, "exclude": 0, "uncertain": 0}
-    for rec in records:
+    total = len(records)
+    for i, rec in enumerate(records, 1):
         out = screen_record(profile, rec, call=call)
-        db.set_screen(db_path, run_id, rec["pmid"], out["verdict"],
+        # PubMed records key on pmid; ClinicalTrials.gov on registry_id.
+        record_id = rec.get("pmid") or rec.get("registry_id", "")
+        db.set_screen(db_path, run_id, record_id, out["verdict"],
                       out["rationale"], config.MODEL_SCREEN)
         counts[out["verdict"]] += 1
+        # Report every 5 papers so the fragment can show a real progress bar.
+        if i % 5 == 0 or i == total:
+            progress(f"Screened {i}/{total} records")
     db.log(db_path, run_id, "screen",
            f"screened {len(records)}: {counts}")
     return counts

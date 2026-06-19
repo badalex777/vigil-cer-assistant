@@ -152,7 +152,8 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
            f"ris={len(ris_records)} unique={len(records)} dups={dups}")
 
     progress("Screening abstracts for relevance (Claude Sonnet)...")
-    screen.run(db_path, run_id, profile, db.get_records(db_path, run_id))
+    screen.run(db_path, run_id, profile, db.get_records(db_path, run_id),
+               progress=progress)
 
     included = db.get_records(db_path, run_id, "screen_verdict='include'")
     progress(f"Abstract-level extraction on {len(included)} included papers "

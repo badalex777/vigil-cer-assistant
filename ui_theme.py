@@ -66,6 +66,45 @@ label, .stTextInput label, .stTextArea label, .stSelectbox label,
 }
 .stSelectbox div[data-baseweb="select"] * { color: %(ink)s !important; }
 
+/* ---- DISABLED WIDGETS: Streamlit sets opacity:0.4 on the CONTAINER, not the input.
+   We must restore opacity at every level to keep labels and values readable. ---- */
+/* Container level - these are Streamlit's testid wrappers */
+[data-testid="stTextInput"],
+[data-testid="stTextArea"],
+[data-testid="stSelectbox"],
+[data-testid="stMultiSelect"],
+[data-testid="stDateInput"],
+[data-testid="stCheckbox"],
+[data-testid="stNumberInput"] { opacity: 1 !important; }
+/* BaseWeb component level */
+[data-baseweb="input"],
+[data-baseweb="textarea"],
+[data-baseweb="select"],
+[data-baseweb="checkbox"] { opacity: 1 !important; }
+/* The actual input/textarea elements when disabled */
+.stTextInput input:disabled,
+.stTextArea textarea:disabled,
+[data-baseweb="input"] input:disabled,
+[data-baseweb="textarea"] textarea:disabled {
+  color: %(ink)s !important; opacity: 1 !important;
+  background: #F0EFEb !important;
+  -webkit-text-fill-color: %(ink)s !important;
+}
+/* Disabled selectbox and multiselect inner text */
+[data-baseweb="select"][aria-disabled="true"] *,
+.stSelectbox [aria-disabled="true"] *,
+.stMultiSelect [aria-disabled="true"] * { color: %(ink)s !important; opacity: 1 !important; }
+/* Disabled checkboxes */
+.stCheckbox [data-testid="stWidgetLabel"] p { color: %(ink)s !important; opacity: 1 !important; }
+/* Disabled date_input */
+[data-testid="stDateInput"] input:disabled {
+  color: %(ink)s !important; opacity: 1 !important;
+  -webkit-text-fill-color: %(ink)s !important;
+}
+/* Widget labels - Streamlit sometimes dims these too */
+[data-testid="stWidgetLabel"] { opacity: 1 !important; }
+[data-testid="stWidgetLabel"] p { color: %(ink)s !important; }
+
 /* the Vigil wordmark */
 .vigil-mark {
   font-family: 'Source Serif 4', serif; font-weight: 700; font-size: 1.5rem;
@@ -177,7 +216,22 @@ small, .muted { color: %(slate)s; }
   font-family: 'Source Serif 4', serif; font-size: 1.2rem; font-weight: 600;
   color: %(navy)s;
 }
-.loadingcard .loadsub { color: %(slate)s; font-size: 0.88rem; margin-top: 0.3rem; }
+.loadmsgs {
+  position: relative; height: 1.4em; width: 100%%;
+  overflow: hidden; margin-top: 0.5rem;
+}
+.loadmsg {
+  position: absolute; width: 100%%; text-align: center;
+  color: %(slate)s; font-size: 0.86rem;
+  opacity: 0; animation: msgfade linear infinite;
+}
+@keyframes msgfade {
+  0%% { opacity: 0; }
+  8%% { opacity: 1; }
+  88%% { opacity: 1; }
+  96%% { opacity: 0; }
+  100%% { opacity: 0; }
+}
 code { color: %(brown)s; background: #F2EFEA; }
 </style>
 """ % {"canvas": CANVAS, "ink": INK, "navy": NAVY, "brown": BROWN,
@@ -234,11 +288,20 @@ def section_note(text: str):
     st.markdown(f'<div class="sectionnote">{text}</div>', unsafe_allow_html=True)
 
 
-def loading_card(placeholder, title="Searching", subtitle=""):
-    """Render a clean, branded loading state (no raw logs) into a placeholder."""
+def loading_card(placeholder, title="Searching", messages=None):
+    """Render a branded loading state with rotating fun-fact messages (pure CSS, no JS)."""
+    if messages is None:
+        messages = ["Working..."]
+    n = len(messages)
+    cycle = n * 10   # 10 seconds per message
+    spans = ""
+    for i, msg in enumerate(messages):
+        spans += (f'<span class="loadmsg" '
+                  f'style="animation-duration:{cycle}s;animation-delay:{i * 10}s">'
+                  f'{msg}</span>')
     placeholder.markdown(
         f'<div class="loadingcard">'
         f'<div class="spinner"></div>'
         f'<div class="loadtitle">{title}</div>'
-        f'<div class="loadsub">{subtitle}</div>'
+        f'<div class="loadmsgs">{spans}</div>'
         f'</div>', unsafe_allow_html=True)
