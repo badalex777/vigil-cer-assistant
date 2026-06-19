@@ -151,30 +151,13 @@ def _phase_a_progress_fragment():
         st.rerun(scope="app")
         return
 
-    prog = result.get("progress", {})
-    pct = float(prog.get("pct", 0.0))
-    msg = prog.get("msg", "Starting...")
-    st.progress(min(pct, 0.99), text=msg)
-
-# Rotating messages shown on the loading screen during Phase A and Phase B.
-# Each message is displayed for ~10 seconds before fading to the next.
-_PHASE_A_MESSAGES = [
-    "Searching PubMed for device-specific literature...",
-    "Vigil runs two parallel tracks: device-specific and state of the art.",
-    "Searching ClinicalTrials.gov for registered trials...",
-    "Every search string is locked before retrieval - no post-hoc changes.",
-    "Deduplicating records across all sources...",
-    "AI screens each abstract against your inclusion and exclusion criteria.",
-    "Open-access papers are retrieved automatically for full-text appraisal.",
-    "The search report will document every record retrieved, screened, and excluded.",
-]
-_PHASE_B_MESSAGES = [
-    "Appraising full-text papers with Claude Opus...",
-    "Vigil extracts outcomes, adverse events, and study design from each paper.",
-    "Every appraised paper is traced to the final CER by PMID and DOI.",
-    "Paywalled papers flagged as appraisal incomplete - never silently skipped.",
-    "Building the six audit-ready documents...",
-]
+    # One live status line, swapped server-side every 2s. No progress bar:
+    # screening dominates wall-clock but maps to a narrow band, so a bar parks
+    # at ~50% and reads as stuck on a recorded demo. A single honest status
+    # line (incl. the live "Screening N/M" counter) advances visibly instead.
+    # Rendered here in the fragment so exactly one message is ever on screen.
+    msg = result.get("progress", {}).get("msg", "Starting...")
+    st.markdown(f'<div class="livestatus">{msg}</div>', unsafe_allow_html=True)
 
 
 def goto(step):
@@ -768,10 +751,12 @@ def step_research():
                 return
 
         # Thread alive (or just finished but output not yet copied): show loading.
-        # The loading card renders ONCE here; CSS handles the rotating messages.
-        # The fragment below re-runs every 2s to update ONLY the progress bar.
+        # The card (spinner + honest time estimate) renders ONCE here; the
+        # fragment below re-runs every 2s to swap a single live status line.
         load_box = st.empty()
-        ui_theme.loading_card(load_box, "Searching", _PHASE_A_MESSAGES)
+        ui_theme.loading_card(
+            load_box, "Searching",
+            "This typically takes 3-8 minutes (longer for a comprehensive search).")
         _phase_a_progress_fragment()
         return
 
@@ -815,10 +800,12 @@ def step_phase_b():
             "Build the document set"
     if st.button(label):
         load_box = st.empty()
-        ui_theme.loading_card(load_box, "Appraising", _PHASE_B_MESSAGES)
+        ui_theme.loading_card(
+            load_box, "Appraising",
+            "Appraising full texts with Claude Opus - this can take a few minutes.")
 
         def progress(s):
-            pass  # messages rotate via CSS
+            pass  # Phase B blocks; the static card communicates the wait
 
         try:
             pb = pipeline.run_fulltext_appraisal(

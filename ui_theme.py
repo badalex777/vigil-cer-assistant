@@ -216,21 +216,13 @@ small, .muted { color: %(slate)s; }
   font-family: 'Source Serif 4', serif; font-size: 1.2rem; font-weight: 600;
   color: %(navy)s;
 }
-.loadmsgs {
-  position: relative; height: 1.4em; width: 100%%;
-  overflow: hidden; margin-top: 0.5rem;
-}
-.loadmsg {
-  position: absolute; width: 100%%; text-align: center;
+.loadsub {
+  width: 100%%; text-align: center; margin-top: 0.5rem;
   color: %(slate)s; font-size: 0.86rem;
-  opacity: 0; animation: msgfade linear infinite;
 }
-@keyframes msgfade {
-  0%% { opacity: 0; }
-  8%% { opacity: 1; }
-  88%% { opacity: 1; }
-  96%% { opacity: 0; }
-  100%% { opacity: 0; }
+.livestatus {
+  width: 100%%; text-align: center; margin: 0.4rem 0 1rem 0;
+  color: %(navy)s; font-size: 0.9rem; font-weight: 600;
 }
 code { color: %(brown)s; background: #F2EFEA; }
 </style>
@@ -288,20 +280,15 @@ def section_note(text: str):
     st.markdown(f'<div class="sectionnote">{text}</div>', unsafe_allow_html=True)
 
 
-def loading_card(placeholder, title="Searching", messages=None):
-    """Render a branded loading state with rotating fun-fact messages (pure CSS, no JS)."""
-    if messages is None:
-        messages = ["Working..."]
-    n = len(messages)
-    cycle = n * 10   # 10 seconds per message
-    spans = ""
-    for i, msg in enumerate(messages):
-        spans += (f'<span class="loadmsg" '
-                  f'style="animation-duration:{cycle}s;animation-delay:{i * 10}s">'
-                  f'{msg}</span>')
+def loading_card(placeholder, title="Searching", subtitle=None):
+    """Render a branded loading state: spinner, title, and an optional static
+    subtitle (e.g. an honest time estimate). Live per-stage status is rendered
+    separately by the caller's fragment, so this card carries no rotating
+    messages - one source of truth, nothing to desync."""
+    sub = (f'<div class="loadsub">{subtitle}</div>') if subtitle else ""
     placeholder.markdown(
         f'<div class="loadingcard">'
         f'<div class="spinner"></div>'
         f'<div class="loadtitle">{title}</div>'
-        f'<div class="loadmsgs">{spans}</div>'
+        f'{sub}'
         f'</div>', unsafe_allow_html=True)
