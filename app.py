@@ -397,10 +397,11 @@ def step_device_profile():
             })
             st.markdown('<hr class="rule"/>', unsafe_allow_html=True)
         ceq1, ceq2 = st.columns([1, 1])
-        if ceq1.button("+ Add another equivalent device"):
+        if ceq1.button("+ Add another equivalent device", disabled=_ro):
             ss.n_equivalents += 1
             st.rerun()
-        if ss.n_equivalents > 1 and ceq2.button("- Remove last equivalent device"):
+        if ss.n_equivalents > 1 and ceq2.button("- Remove last equivalent device",
+                                                 disabled=_ro):
             ss.n_equivalents -= 1
             st.rerun()
 
