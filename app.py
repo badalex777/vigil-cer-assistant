@@ -49,7 +49,14 @@ ss.setdefault("ris_uploads", [])
 ss.setdefault("_phase_a_thread", None)   # background thread for Phase A
 ss.setdefault("_phase_a_result", None)   # shared result dict written by the thread
 
-DEMO_RETMAX = int(os.getenv("VIGIL_DEMO_RETMAX", "0")) or None  # internal; 0 = comprehensive
+# SAFETY: the default must be the CHEAP path, never comprehensive. If the env var is
+# missing we cap at 250/track - a missing variable must never trigger a $20 run.
+# Comprehensive (all hits) requires an EXPLICIT opt-in: VIGIL_COMPREHENSIVE=1.
+_COMPREHENSIVE = os.getenv("VIGIL_COMPREHENSIVE", "0") == "1"
+if _COMPREHENSIVE:
+    DEMO_RETMAX = None   # comprehensive: retrieve all hits (the real-CER path)
+else:
+    DEMO_RETMAX = int(os.getenv("VIGIL_DEMO_RETMAX", "250") or "250")  # safe cap
 
 
 def _run_phase_a_bg(profile, run_id, db_path, retmax, ris_uploads, result):
