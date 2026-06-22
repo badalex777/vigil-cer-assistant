@@ -124,6 +124,10 @@ class StateError(Exception):
 def connect(db_path: str):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    # WAL mode: readers never block writers and writers never block readers.
+    # Idempotent: already-WAL databases return "wal" with no state change.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")   # safe with WAL; reduces fsync overhead
     try:
         yield conn
         conn.commit()
