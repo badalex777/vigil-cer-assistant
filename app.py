@@ -771,7 +771,7 @@ def step_research():
         load_box = st.empty()
         ui_theme.loading_card(
             load_box, "Searching",
-            "This typically takes 3-8 minutes (longer for a comprehensive search).")
+            "This typically takes 5-20 minutes depending on how many papers match (longer for a comprehensive search).")
         _phase_a_progress_fragment()
         return
 
