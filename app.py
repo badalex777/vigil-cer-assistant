@@ -61,6 +61,7 @@ ss.setdefault("cep_md", None)
 ss.setdefault("ris_uploads", [])
 ss.setdefault("_phase_a_thread", None)   # background thread for Phase A
 ss.setdefault("_phase_a_result", None)   # shared result dict written by the thread
+ss.setdefault("_cep_docx_bytes", None)   # cached CEP Word render (avoids per-rerun rebuild)
 
 # SAFETY: the default must be the CHEAP path, never comprehensive. If the env var is
 # missing we cap at 250/track - a missing variable must never trigger a $20 run.
@@ -711,7 +712,8 @@ def _show_orphaned_run_ui():
             pass
         for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
                   "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
-                  "_phase_a_thread", "_phase_a_result", "n_equivalents"]:
+                  "_phase_a_thread", "_phase_a_result", "n_equivalents",
+                  "_cep_docx_bytes"]:
             ss.pop(k, None)
         st.rerun()
 
@@ -723,9 +725,11 @@ def step_research():
     # CEP always downloadable from the moment the run is locked.
     if ss.cep_md:
         import docx_export
-        cep_docx = docx_export.md_to_docx_bytes(ss.cep_md, "Clinical Evaluation Plan")
+        if ss._cep_docx_bytes is None:
+            ss._cep_docx_bytes = docx_export.md_to_docx_bytes(
+                ss.cep_md, "Clinical Evaluation Plan")
         st.download_button(
-            "Download Clinical Evaluation Plan (CEP)", cep_docx,
+            "Download Clinical Evaluation Plan (CEP)", ss._cep_docx_bytes,
             file_name="01_Clinical_Evaluation_Plan.docx",
             mime=("application/vnd.openxmlformats-officedocument."
                   "wordprocessingml.document"))
@@ -930,7 +934,7 @@ def step_documents():
     if st.button("Start a new evaluation"):
         for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
                   "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
-                  "_phase_a_thread", "_phase_a_result"]:
+                  "_phase_a_thread", "_phase_a_result", "_cep_docx_bytes"]:
             ss.pop(k, None)
         st.rerun()
 
