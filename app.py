@@ -684,6 +684,25 @@ def step_lock_and_start():
 # =============================================================================
 # STEP 4 - RESEARCH IN PROGRESS
 # =============================================================================
+def _show_orphaned_run_ui():
+    """Show fail-clean recovery UI when Phase A thread died without completing."""
+    st.error(
+        "The previous run was interrupted (API error or crash). "
+        "Results so far are incomplete and cannot be resumed."
+    )
+    if st.button("Start New Evaluation", type="primary"):
+        import os
+        try:
+            os.remove(config.DB_PATH)
+        except OSError:
+            pass
+        for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
+                  "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
+                  "_phase_a_thread", "_phase_a_result", "n_equivalents"]:
+            ss.pop(k, None)
+        st.rerun()
+
+
 def step_research():
     st.header("4. Research in Progress")
     profile = _profile_from_state()
@@ -737,11 +756,7 @@ def step_research():
         if not thread.is_alive():
             # Thread just finished - collect the result on this run.
             if result and result.get("error"):
-                st.error(f"Search failed: {result['error']}")
-                if st.button("Retry"):
-                    ss._phase_a_thread = None
-                    ss._phase_a_result = None
-                    st.rerun()
+                _show_orphaned_run_ui()
                 return
             if result and result.get("done") and result.get("output") is not None:
                 ss.phase_a = result["output"]
@@ -761,8 +776,11 @@ def step_research():
         return
 
     # ------------------------------------------------------------------ #
-    # CASE 3: No thread - shouldn't reach here post-Lock, but safety net #
+    # CASE 3: No thread - orphaned if run was already locked              #
     # ------------------------------------------------------------------ #
+    if ss.run_id is not None:
+        _show_orphaned_run_ui()
+        return
     st.info("The search has not started. Go back to step 3 and click "
             "'Lock scope & start research'.")
 
