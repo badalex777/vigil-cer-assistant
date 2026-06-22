@@ -62,6 +62,7 @@ ss.setdefault("ris_uploads", [])
 ss.setdefault("_phase_a_thread", None)   # background thread for Phase A
 ss.setdefault("_phase_a_result", None)   # shared result dict written by the thread
 ss.setdefault("_cep_docx_bytes", None)   # cached CEP Word render (avoids per-rerun rebuild)
+ss.setdefault("_docs_cache", None)       # cached step-6 doc set (built list + zip bytes)
 
 # SAFETY: the default must be the CHEAP path, never comprehensive. If the env var is
 # missing we cap at 250/track - a missing variable must never trigger a $20 run.
@@ -866,75 +867,81 @@ def step_documents():
     run_id, scope_hash = ss.run_id, ss.scope_hash
     ui_theme.disclaimer()
 
-    counts = out["counts"]
-    search_meta = ss.phase_a.get("search_meta", {}) if ss.phase_a else {}
-    records = db.retrieval_list(config.DB_PATH, run_id)
-    appraised = [r for r in records if r.get("appraisal_status") == "complete"]
-    incomplete = [r for r in records if r.get("appraisal_status") == "appraisal_incomplete"]
-
-    from prisma import PrismaCounts
-    if hasattr(counts, "as_dict"):
-        pc = counts
-    else:
-        pc = PrismaCounts(**{k: counts.get(k, 0) for k in [
-            "db_records", "register_records", "duplicates_removed", "screened",
-            "excluded_screening", "reports_sought", "reports_not_retrieved",
-            "assessed", "excluded_eligibility", "included"]})
-
-    cep = ss.cep_md or outputs.generate_cep_md(profile, run_id, ss.queries, scope_hash)
-    sp = outputs.generate_search_protocol_md(
-        profile, run_id, ss.queries, scope_hash,
-        ris_sources=[u["source"] for u in ss.ris_uploads] or None)
-    sr = outputs.generate_search_report_md(profile, run_id, pc, search_meta,
-                                           scope_hash=scope_hash)
-    tm = outputs.generate_traceability_matrix_md(profile, run_id, records,
-                                                 scope_hash=scope_hash)
-    log_rows = db.get_run_log(config.DB_PATH, run_id) if hasattr(db, "get_run_log") else []
-    state_row = db.get_run_state(config.DB_PATH, run_id)
-    audit = outputs.generate_audit_trail_csv(log_rows, state_row)
-    cer = outputs.generate_cer_md(profile, run_id, appraised, incomplete,
-                                  pms_signals=[], counts=pc, scope_hash=scope_hash)
-
-    # 5 narrative documents -> Word (.docx); audit trail stays CSV (data export)
-    import docx_export
-    word_docs = [
-        ("01_Clinical_Evaluation_Plan.docx", cep, "Clinical Evaluation Plan"),
-        ("02_Literature_Search_Protocol.docx", sp, "Literature Search Protocol"),
-        ("03_Literature_Search_Report.docx", sr, "Literature Search Report"),
-        ("04_CER_First_Draft.docx", cer, "CER First Draft"),
-        ("05_Evidence_Traceability_Matrix.docx", tm, "Evidence Traceability Matrix"),
-    ]
     DOCX_MIME = ("application/vnd.openxmlformats-officedocument."
                  "wordprocessingml.document")
+
+    if ss._docs_cache is None:
+        counts = out["counts"]
+        search_meta = ss.phase_a.get("search_meta", {}) if ss.phase_a else {}
+        records = db.retrieval_list(config.DB_PATH, run_id)
+        appraised = [r for r in records if r.get("appraisal_status") == "complete"]
+        incomplete = [r for r in records if r.get("appraisal_status") == "appraisal_incomplete"]
+
+        from prisma import PrismaCounts
+        if hasattr(counts, "as_dict"):
+            pc = counts
+        else:
+            pc = PrismaCounts(**{k: counts.get(k, 0) for k in [
+                "db_records", "register_records", "duplicates_removed", "screened",
+                "excluded_screening", "reports_sought", "reports_not_retrieved",
+                "assessed", "excluded_eligibility", "included"]})
+
+        cep = ss.cep_md or outputs.generate_cep_md(profile, run_id, ss.queries, scope_hash)
+        sp = outputs.generate_search_protocol_md(
+            profile, run_id, ss.queries, scope_hash,
+            ris_sources=[u["source"] for u in ss.ris_uploads] or None)
+        sr = outputs.generate_search_report_md(profile, run_id, pc, search_meta,
+                                               scope_hash=scope_hash)
+        tm = outputs.generate_traceability_matrix_md(profile, run_id, records,
+                                                     scope_hash=scope_hash)
+        log_rows = db.get_run_log(config.DB_PATH, run_id) if hasattr(db, "get_run_log") else []
+        state_row = db.get_run_state(config.DB_PATH, run_id)
+        audit = outputs.generate_audit_trail_csv(log_rows, state_row)
+        cer = outputs.generate_cer_md(profile, run_id, appraised, incomplete,
+                                      pms_signals=[], counts=pc, scope_hash=scope_hash)
+
+        # 5 narrative documents -> Word (.docx); audit trail stays CSV (data export)
+        import docx_export
+        word_docs = [
+            ("01_Clinical_Evaluation_Plan.docx", cep, "Clinical Evaluation Plan"),
+            ("02_Literature_Search_Protocol.docx", sp, "Literature Search Protocol"),
+            ("03_Literature_Search_Report.docx", sr, "Literature Search Report"),
+            ("04_CER_First_Draft.docx", cer, "CER First Draft"),
+            ("05_Evidence_Traceability_Matrix.docx", tm, "Evidence Traceability Matrix"),
+        ]
+
+        built = []
+        with st.spinner("Building Word documents..."):
+            for fname, md, title in word_docs:
+                data = docx_export.md_to_docx_bytes(md, title)
+                built.append((fname, data, DOCX_MIME))
+        built.append(("06_Audit_Trail.csv", audit.encode("utf-8"), "text/csv"))
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for fname, data, _ in built:
+                z.writestr(fname, data)
+
+        ss._docs_cache = {"built": built, "zip": buf.getvalue()}
 
     st.markdown('<span class="muted">Six audit-ready documents, each carrying the same '
                 'control block (run, scope hash, version) tying them to this immutable '
                 'run. Five are Word documents for PRRC review and sign-off; the audit '
                 'trail is a CSV data export.</span>', unsafe_allow_html=True)
 
-    built = []  # (filename, bytes, mime)
-    with st.spinner("Building Word documents..."):
-        for fname, md, title in word_docs:
-            data = docx_export.md_to_docx_bytes(md, title)
-            built.append((fname, data, DOCX_MIME))
-    built.append(("06_Audit_Trail.csv", audit.encode("utf-8"), "text/csv"))
-
-    for fname, data, mime in built:
+    for fname, data, mime in ss._docs_cache["built"]:
         st.download_button(f"Download {fname}", data, file_name=fname, mime=mime,
                            key=f"dl_{fname}")
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for fname, data, _ in built:
-            z.writestr(fname, data)
-    st.download_button("Download all 6 documents (.zip)", buf.getvalue(),
+    st.download_button("Download all 6 documents (.zip)", ss._docs_cache["zip"],
                        file_name=f"Vigil_CER_set_{run_id}.zip", mime="application/zip")
 
     st.markdown('<hr class="rule"/>', unsafe_allow_html=True)
     if st.button("Start a new evaluation"):
         for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
                   "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
-                  "_phase_a_thread", "_phase_a_result", "_cep_docx_bytes"]:
+                  "_phase_a_thread", "_phase_a_result", "_cep_docx_bytes",
+                  "_docs_cache"]:
             ss.pop(k, None)
         st.rerun()
 
