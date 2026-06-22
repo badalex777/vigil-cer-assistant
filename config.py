@@ -93,6 +93,11 @@ EFETCH_BATCH = int(os.getenv("VIGIL_EFETCH_BATCH", "200"))
 # Comprehensive mode is an explicit, deliberate opt-in and bypasses this.
 MAX_SCREEN_RECORDS = int(os.getenv("VIGIL_MAX_SCREEN_RECORDS", "800"))
 
+# Hard circuit-breaker on extraction cost. Extraction bills one Sonnet call per
+# included record. In non-comprehensive mode, abort before any extraction call
+# if the include count exceeds this ceiling. Comprehensive mode is exempt.
+MAX_EXTRACT_RECORDS = int(os.getenv("VIGIL_MAX_EXTRACT_RECORDS", "200"))
+
 # --- Prompt template versions (external, versioned) ---------------------------
 PROMPT_SCREEN   = "prompts/screen_v1.txt"
 PROMPT_EXTRACT  = "prompts/extract_v1.txt"

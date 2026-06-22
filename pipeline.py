@@ -171,6 +171,20 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
                progress=progress)
 
     included = db.get_records(db_path, run_id, "screen_verdict='include'")
+
+    # Cost circuit-breaker: extraction bills one Sonnet call per included record.
+    # In non-comprehensive mode an unexpectedly large include set means something is
+    # wrong; abort BEFORE any extraction call rather than silently spending $10-20.
+    # Comprehensive mode is a deliberate opt-in and is exempt.
+    if not comprehensive and len(included) > config.MAX_EXTRACT_RECORDS:
+        msg = (f"Aborting before extraction: {len(included)} included records exceed the "
+               f"safety ceiling of {config.MAX_EXTRACT_RECORDS} (non-comprehensive "
+               f"mode). Refine the search to narrow scope, or set "
+               f"VIGIL_COMPREHENSIVE=1 to run a deliberate comprehensive extraction.")
+        progress(msg)
+        db.log(db_path, run_id, "abort", msg)
+        raise RuntimeError(msg)
+
     progress(f"Abstract-level extraction on {len(included)} included papers "
              f"(flagged appraisal-incomplete until full text is appraised)...")
     extract.run(db_path, run_id, profile, included)
