@@ -240,8 +240,14 @@ STEPS = [
 ]
 
 
+@st.cache_resource
+def _css_blob() -> str:
+    """CSS string cached at process level; avoids re-processing on every rerun."""
+    return _CSS
+
+
 def inject():
-    st.markdown(_CSS, unsafe_allow_html=True)
+    st.markdown(_css_blob(), unsafe_allow_html=True)
 
 
 def header():
