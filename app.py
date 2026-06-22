@@ -35,6 +35,19 @@ st.set_page_config(page_title="Vigil - CER Assistant", layout="centered",
 ui_theme.inject()
 ss = st.session_state
 
+# --- cold-start DB wipe -------------------------------------------------------
+# Streamlit re-runs the full script on EVERY interaction. Use a one-time sentinel
+# so the deletion fires exactly once per browser session (the genuine cold start),
+# not on every rerun where run_id happens to be None mid-session.
+# Guard: never wipe if a run is already active in this session.
+if not ss.get("_db_cleared"):
+    if not ss.get("run_id"):
+        try:
+            os.remove(config.DB_PATH)
+        except OSError:
+            pass
+    ss._db_cleared = True
+
 # --- session defaults --------------------------------------------------------
 ss.setdefault("step", 0)
 ss.setdefault("profile_dict", None)
