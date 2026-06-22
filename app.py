@@ -944,7 +944,7 @@ if _is_locked:
         max_step = 4   # Phase A done -> Phase B is available
     else:
         max_step = 3   # locked, search not yet run -> up to Research
-    labels = ["1 Device Profile", "2 Search", "3 Lock", "4 Research", "5 Phase B", "6 Docs"]
+    labels = ["1. Device Profile", "2. Search", "3. Lock", "4. Research", "5. Phase B", "6. Docs"]
     reachable = [i for i in range(6) if i <= max_step]
     nav = st.columns(len(reachable))
     for col, i in zip(nav, reachable):
