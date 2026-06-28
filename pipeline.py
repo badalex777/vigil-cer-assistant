@@ -4,13 +4,16 @@ Vigil - CER Literature Review Assistant pipeline orchestrator (two-phase).
 Phase A  (run_search_and_screen):
     Device Profile -> two-track PubMed search -> dedup -> abstract screen ->
     abstract-level extraction on included (flagged `appraisal_incomplete`) ->
-    PRISMA + preliminary search report + preliminary CER draft.
-    Produces a RETRIEVAL LIST: included papers awaiting full-text upload.
+    open-access full-text retrieval + identity verification.
+    Ends with a RETRIEVAL LIST: included papers and their retrieval status.
+    NO Opus calls. NO appraisal. NO document generation.
 
 Phase B  (run_fulltext_appraisal):
-    PRRC uploads full-text PDFs (pmid -> bytes) -> MEDDEV A6 appraisal on each ->
-    papers upgrade `appraisal_incomplete` -> `complete` -> regenerate PRISMA,
-    search report, and CER draft. Papers not uploaded stay flagged (auditable).
+    User-triggered. Appraises ALL included papers in one pass:
+      - OA-retrieved verified papers (from Phase A verified_retrieval)
+      - PRRC-uploaded PDFs (residual paywalled papers)
+    Then generates PRISMA, search report, and CER draft.
+    Papers not appraised stay flagged `appraisal_incomplete` (auditable).
 
 Each run is keyed to run_id + scope_hash for full audit traceability.
 """
@@ -68,7 +71,11 @@ def _build_outputs(db_path, run_id, profile, queries, duplicates):
 def run_search_and_screen(profile, db_path=None, retmax=None,
                           comprehensive=False, include_ctgov=True,
                           ris_files=None, progress=lambda s: None):
-    """Phase A. Returns a result dict including the retrieval_list for Phase B.
+    """Phase A. Search, screen, extract, retrieve, verify. No Opus calls.
+
+    Returns a result dict with retrieval_list, manual_upload_list, and
+    verified_retrieval (OA full texts that passed identity verification) for
+    Phase B to appraise. Phase A ends at verification — no appraisal or drafts.
 
     comprehensive=False (default): top-N per track (retmax) - cheap, for demos/diagnostics.
     comprehensive=True: retrieve ALL hits per track up to config.MAX_HITS_PER_TRACK,
@@ -189,10 +196,13 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
              f"(flagged appraisal-incomplete until full text is appraised)...")
     extract.run(db_path, run_id, profile, included)
 
-    # --- Auto full-text retrieval (open access) + verification + appraisal ---
-    # Fetch every full text reachable for free (PMC, Unpaywall), VERIFY each
-    # retrieved document is actually the paper we expect (DOI/title), and appraise
-    # only the verified ones. Unverified or no-OA papers go to the PRRC upload list.
+    # --- Auto full-text retrieval (open access) + verification ---
+    # Fetch every full text reachable for free (PMC, Unpaywall) and VERIFY each
+    # retrieved document is actually the paper we expect (DOI/title). Verified
+    # papers are returned in verified_retrieval for Phase B to appraise.
+    # Unverified or no-OA papers go to the PRRC upload list.
+    # NOTE: NO appraisal (Opus) runs here. Phase B owns all appraisal.
+    verified_retrieval = {}
     if config.ENABLE_AUTO_RETRIEVAL:
         progress(f"Auto-retrieving open-access full text for {len(included)} papers "
                  f"(PMC + Unpaywall)...")
@@ -200,7 +210,6 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
 
         progress("Verifying identity of retrieved documents (DOI / title)...")
         rec_by_pmid = {r["pmid"]: r for r in included}
-        verified_retrieval = {}
         n_pass = n_fail = 0
         for pmid, res in retrieval.items():
             if res["kind"] is None:
@@ -209,10 +218,13 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
             verdict = verify.verdict_for(rec_by_pmid[pmid], res)
             db.set_verification(db_path, run_id, pmid, verdict)
             if verdict["result"] in verify.VERIFIED:
+                # Mark retrieval source now so manual_upload_list excludes this paper.
+                db.set_retrieval_source(db_path, run_id, pmid,
+                                        res["status"], res.get("source_url"))
                 verified_retrieval[pmid] = res
                 n_pass += 1
             else:
-                # Found a copy but couldn't confirm identity -> do NOT appraise it.
+                # Found a copy but couldn't confirm identity -> route to manual upload.
                 db.set_retrieval_source(db_path, run_id, pmid, "auto_unverified",
                                         res.get("source_url"))
                 n_fail += 1
@@ -221,31 +233,51 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
         progress(f"Verification: {n_pass} confirmed, {n_fail} unverified "
                  f"(routed to manual).")
 
-        progress("Full-text appraisal on verified papers (Claude Opus)...")
-        appraise.run_from_retrieval(db_path, run_id, profile, verified_retrieval,
-                                    progress=progress)
-
-    progress("Building outputs + manual-upload list...")
-    out = _build_outputs(db_path, run_id, profile, queries, dups)
-    out["_duplicates"] = dups  # carried for Phase B regeneration
-    out["search_meta"] = search_meta  # comprehensive retrieval audit metadata
-    n_manual = len(out["manual_upload_list"])
-    n_auto = out["counts"]["included"]
-    progress(f"Phase A done. Auto-appraised {n_auto} from open access; "
-             f"{n_manual} paper(s) need a manual PRRC upload.")
-    return out
+    # Phase A ends here. Compute counts for the UI chips (no outputs generated).
+    all_rows = db.get_records(db_path, run_id)
+    counts = prisma.counts_from_run(all_rows, dups)
+    manual_upload_list = db.manual_upload_list(db_path, run_id)
+    n_manual = len(manual_upload_list)
+    n_verified = len(verified_retrieval)
+    progress(f"Phase A complete: {counts.screened} screened, "
+             f"{counts.reports_sought} included at abstract screen; "
+             f"{n_verified} OA full texts verified, {n_manual} need PRRC upload.")
+    return {
+        "run_id": run_id,
+        "scope_hash": profile.run_scope_hash(),
+        "queries": queries,
+        "counts": counts.as_dict(),
+        "retrieval_list": db.retrieval_list(db_path, run_id),
+        "manual_upload_list": manual_upload_list,
+        "verified_retrieval": verified_retrieval,
+        "_duplicates": dups,
+        "search_meta": search_meta,
+    }
 
 
 def run_fulltext_appraisal(profile, run_id, uploads: dict, db_path=None,
-                           duplicates=0, queries=None, progress=lambda s: None):
-    """Phase B. uploads = {pmid: pdf_bytes}. Regenerates all outputs."""
+                           duplicates=0, queries=None, verified_retrieval=None,
+                           progress=lambda s: None):
+    """Phase B (user-triggered). Appraises all full texts, then builds outputs.
+
+    verified_retrieval: {pmid: retrieval_result} from Phase A — OA papers that
+        passed identity verification. Appraised first, before PRRC uploads.
+    uploads: {pmid: pdf_bytes} — PRRC-uploaded PDFs for paywalled residuals.
+    Both are appraised in one pass before any output is generated.
+    """
     db_path = db_path or config.DB_PATH
     queries = queries or pubmed.build_track_queries(profile)
+
+    if verified_retrieval:
+        progress(f"Full-text appraisal on {len(verified_retrieval)} verified "
+                 f"open-access paper(s) (Claude Opus)...")
+        appraise.run_from_retrieval(db_path, run_id, profile, verified_retrieval,
+                                    progress=progress)
 
     progress(f"Full-text appraisal on {len(uploads)} uploaded paper(s) (Claude Opus)...")
     appraise.run_from_uploads(db_path, run_id, profile, uploads, progress=progress)
 
-    progress("Regenerating PRISMA, search report, and CER draft...")
+    progress("Building PRISMA, search report, and CER draft...")
     out = _build_outputs(db_path, run_id, profile, queries, duplicates)
     still_incomplete = sum(
         1 for r in out["retrieval_list"] if r["appraisal_status"] == "appraisal_incomplete")
@@ -259,6 +291,7 @@ if __name__ == "__main__":
     prof = DeviceProfile.from_json("devices/npwt_sample.json")
     out = run_search_and_screen(prof, progress=print)
     print("\n=== Phase A:", out["run_id"], "scope", out["scope_hash"], "===")
-    print("Retrieval list (awaiting full text):")
-    for r in out["retrieval_list"]:
-        print(f"  [{r['appraisal_status']}] PMID {r['pmid']} - {r['title'][:70]}")
+    print(f"Verified OA: {len(out['verified_retrieval'])} paper(s)")
+    print("Manual upload list (paywalled / unverified):")
+    for r in out["manual_upload_list"]:
+        print(f"  [{r['retrieval_source']}] PMID {r['pmid']} - {r['title'][:70]}")

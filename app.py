@@ -112,10 +112,8 @@ _PHASE_A_STAGE_MAP = [
     ("Abstract-level extraction",           0.78, "Extracting evidence from included papers..."),
     ("Auto-retrieving",                     0.83, "Retrieving open-access full texts..."),
     ("Verifying identity",                  0.90, "Verifying retrieved document identity..."),
-    ("Verification:",                       0.92, "Verification complete."),
-    ("Full-text appraisal on verified",     0.94, "Appraising full texts (Claude Opus)..."),
-    ("Building outputs",                    0.98, "Building audit-ready document set..."),
-    ("Phase A done",                        1.00, "Search and screening complete."),
+    ("Verification:",                       0.97, "Verification complete."),
+    ("Phase A complete",                    1.00, "Retrieval complete. Ready for Phase B."),
 ]
 
 
@@ -747,8 +745,8 @@ def step_research():
             f'<div class="chips">'
             f'<div class="chip"><div class="k">Screened</div>'
             f'<div class="v">{c.get("screened", 0)}</div></div>'
-            f'<div class="chip"><div class="k">Auto-appraised</div>'
-            f'<div class="v">{c.get("included", 0)}</div></div>'
+            f'<div class="chip"><div class="k">Included</div>'
+            f'<div class="v">{c.get("reports_sought", 0)}</div></div>'
             f'<div class="chip"><div class="k">For upload</div>'
             f'<div class="v">{len(out["manual_upload_list"])}</div></div>'
             f'</div>', unsafe_allow_html=True)
@@ -847,6 +845,7 @@ def step_phase_b():
             pb = pipeline.run_fulltext_appraisal(
                 profile, ss.run_id, uploads, db_path=config.DB_PATH,
                 duplicates=out.get("_duplicates", 0), queries=ss.queries,
+                verified_retrieval=out.get("verified_retrieval", {}),
                 progress=progress)
             ss.phase_b = pb
             db.mark_complete(config.DB_PATH, ss.run_id,
