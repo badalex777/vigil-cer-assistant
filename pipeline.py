@@ -18,6 +18,7 @@ Phase B  (run_fulltext_appraisal):
 Each run is keyed to run_id + scope_hash for full audit traceability.
 """
 from __future__ import annotations
+import time
 import uuid
 
 import config
@@ -113,11 +114,28 @@ def run_search_and_screen(profile, db_path=None, retmax=None, run_id=None,
         search_meta = {"device_specific": m1, "state_of_art": m2}
     else:
         progress("Track 1 (device-specific) - searching PubMed...")
+        _t1_total = pubmed.esearch_count(queries["device_specific"])
         t1 = pubmed.run_track(queries["device_specific"], "device_specific", retmax)
         progress(f"  Track 1: {len(t1)} records")
         progress("Track 2 (state of the art) - searching PubMed...")
+        _t2_total = pubmed.esearch_count(queries["state_of_art"])
         t2 = pubmed.run_track(queries["state_of_art"], "state_of_art", retmax)
         progress(f"  Track 2: {len(t2)} records")
+        _search_date = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        search_meta = {
+            "device_specific": {
+                "track": "device_specific", "total_available": _t1_total,
+                "retrieved": len(t1), "capped": _t1_total > retmax,
+                "cap": retmax, "search_date_utc": _search_date,
+                "query": queries["device_specific"],
+            },
+            "state_of_art": {
+                "track": "state_of_art", "total_available": _t2_total,
+                "retrieved": len(t2), "capped": _t2_total > retmax,
+                "cap": retmax, "search_date_utc": _search_date,
+                "query": queries["state_of_art"],
+            },
+        }
 
     # --- ClinicalTrials.gov (second source: trial registrations, not papers) ---
     ctgov_records = []
