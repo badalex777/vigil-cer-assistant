@@ -68,7 +68,7 @@ def _build_outputs(db_path, run_id, profile, queries, duplicates):
     }
 
 
-def run_search_and_screen(profile, db_path=None, retmax=None,
+def run_search_and_screen(profile, db_path=None, retmax=None, run_id=None,
                           comprehensive=False, include_ctgov=True,
                           ris_files=None, progress=lambda s: None):
     """Phase A. Search, screen, extract, retrieve, verify. No Opus calls.
@@ -77,6 +77,9 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
     verified_retrieval (OA full texts that passed identity verification) for
     Phase B to appraise. Phase A ends at verification — no appraisal or drafts.
 
+    run_id: caller-supplied id (used when the UI has already initialised run state
+        under a known id). If omitted a fresh id is generated (e.g. the __main__
+        test path).
     comprehensive=False (default): top-N per track (retmax) - cheap, for demos/diagnostics.
     comprehensive=True: retrieve ALL hits per track up to config.MAX_HITS_PER_TRACK,
         paginated via the NCBI history server - the PRISMA-faithful path for a real CER.
@@ -86,7 +89,8 @@ def run_search_and_screen(profile, db_path=None, retmax=None,
     """
     db_path = db_path or config.DB_PATH
     retmax = retmax or config.DEFAULT_RETMAX_PER_TRACK
-    run_id = f"{profile.device_name[:8].strip().replace(' ','_')}-{uuid.uuid4().hex[:8]}"
+    if run_id is None:
+        run_id = f"{profile.device_name[:8].strip().replace(' ','_')}-{uuid.uuid4().hex[:8]}"
 
     db.init_db(db_path)
     db.start_run(db_path, run_id, profile)

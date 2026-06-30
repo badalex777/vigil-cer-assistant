@@ -83,7 +83,7 @@ def _run_phase_a_bg(profile, run_id, db_path, retmax, ris_uploads, result):
     try:
         result["progress"] = {"pct": 0.01, "msg": "Starting search..."}
         out = pipeline.run_search_and_screen(
-            profile, db_path=db_path, retmax=retmax,
+            profile, db_path=db_path, retmax=retmax, run_id=run_id,
             comprehensive=(retmax is None), include_ctgov=True,
             progress=prog)
         if ris_uploads:
