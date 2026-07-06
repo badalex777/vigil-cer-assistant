@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS records (
     verification_score  REAL,
     verification_reason TEXT,
     appraisal_mode   TEXT DEFAULT 'abstract',        -- 'abstract' | 'fulltext'
-    appraisal_status TEXT DEFAULT 'pending',         -- 'pending'|'complete'|'appraisal_incomplete'
+    appraisal_status TEXT DEFAULT 'pending',         -- 'pending'|'complete'|'appraisal_incomplete'|'registry_evidence'
     fulltext_path    TEXT,                            -- path to PRRC-uploaded full-text PDF
     extraction_json  TEXT,
     PRIMARY KEY (run_id, pmid)
@@ -282,6 +282,18 @@ def set_verification(db_path, run_id, pmid, verdict: dict):
         )
 
 
+def set_registry_evidence(db_path, run_id, pmid):
+    """Flag a trial registration as counted registry evidence: included evidence
+    that never enters the paper appraisal state machine (no PDF upload, no Opus
+    appraisal)."""
+    with connect(db_path) as c:
+        c.execute(
+            "UPDATE records SET appraisal_status='registry_evidence' "
+            "WHERE run_id=? AND pmid=?",
+            (run_id, pmid),
+        )
+
+
 def set_fulltext_appraisal(db_path, run_id, pmid, appraisal: dict, status="complete"):
     """Persist the full-text appraisal result (upgrades the paper from abstract-only)."""
     with connect(db_path) as c:
@@ -305,6 +317,7 @@ def manual_upload_list(db_path, run_id):
     return get_records(
         db_path, run_id,
         "screen_verdict='include' AND appraisal_status='appraisal_incomplete' "
+        "AND entry_type != 'trial_registration' "
         "AND (retrieval_source IN ('paywalled_manual','auto_unverified') "
         "     OR retrieval_source IS NULL)")
 

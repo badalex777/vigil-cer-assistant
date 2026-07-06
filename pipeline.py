@@ -50,7 +50,11 @@ def _build_outputs(db_path, run_id, profile, queries, duplicates):
     incomplete = db.get_records(
         db_path, run_id,
         "screen_verdict='include' AND appraisal_status='appraisal_incomplete'")
-    cer_section = draft.build_cer_section(profile, appraised, incomplete, pms_signals)
+    registry = db.get_records(
+        db_path, run_id,
+        "screen_verdict='include' AND appraisal_status='registry_evidence'")
+    cer_section = draft.build_cer_section(profile, appraised, incomplete, pms_signals,
+                                          registry_records=registry)
 
     db.save_output(db_path, run_id, "search_report", search_report)
     db.save_output(db_path, run_id, "cer_draft", cer_section)
@@ -76,7 +80,7 @@ def run_search_and_screen(profile, db_path=None, retmax=None, run_id=None,
 
     Returns a result dict with retrieval_list, manual_upload_list, and
     verified_retrieval (OA full texts that passed identity verification) for
-    Phase B to appraise. Phase A ends at verification — no appraisal or drafts.
+    Phase B to appraise. Phase A ends at verification - no appraisal or drafts.
 
     run_id: caller-supplied id (used when the UI has already initialised run state
         under a known id). If omitted a fresh id is generated (e.g. the __main__
@@ -218,20 +222,35 @@ def run_search_and_screen(profile, db_path=None, retmax=None, run_id=None,
              f"(flagged appraisal-incomplete until full text is appraised)...")
     extract.run(db_path, run_id, profile, included)
 
+    # Trial registrations are counted as included evidence but are a distinct
+    # evidence type: they never enter the paper appraisal state machine (no PDF
+    # upload, no PMC/Unpaywall lookup, no Opus appraisal). Flag them right after
+    # extraction so they don't rot at `appraisal_incomplete` (extraction above
+    # stamps every included record, registrations included, as incomplete).
+    registrations = [r for r in included if r.get("entry_type") == "trial_registration"]
+    for r in registrations:
+        db.set_registry_evidence(db_path, run_id, r["pmid"])
+    if registrations:
+        progress(f"{len(registrations)} trial registration(s) counted as registry "
+                 f"evidence (not routed to full-text appraisal)...")
+
     # --- Auto full-text retrieval (open access) + verification ---
     # Fetch every full text reachable for free (PMC, Unpaywall) and VERIFY each
     # retrieved document is actually the paper we expect (DOI/title). Verified
     # papers are returned in verified_retrieval for Phase B to appraise.
     # Unverified or no-OA papers go to the PRRC upload list.
     # NOTE: NO appraisal (Opus) runs here. Phase B owns all appraisal.
+    # Trial registrations have no PMID/DOI to look up in PMC/Unpaywall and are
+    # never routed to full-text retrieval - exclude them from the batch.
+    retrievable = [r for r in included if r.get("entry_type") != "trial_registration"]
     verified_retrieval = {}
     if config.ENABLE_AUTO_RETRIEVAL:
-        progress(f"Auto-retrieving open-access full text for {len(included)} papers "
+        progress(f"Auto-retrieving open-access full text for {len(retrievable)} papers "
                  f"(PMC + Unpaywall)...")
-        retrieval = retrieve.retrieve_batch(included, progress=progress)
+        retrieval = retrieve.retrieve_batch(retrievable, progress=progress)
 
         progress("Verifying identity of retrieved documents (DOI / title)...")
-        rec_by_pmid = {r["pmid"]: r for r in included}
+        rec_by_pmid = {r["pmid"]: r for r in retrievable}
         n_pass = n_fail = 0
         for pmid, res in retrieval.items():
             if res["kind"] is None:
@@ -282,9 +301,9 @@ def run_fulltext_appraisal(profile, run_id, uploads: dict, db_path=None,
                            progress=lambda s: None):
     """Phase B (user-triggered). Appraises all full texts, then builds outputs.
 
-    verified_retrieval: {pmid: retrieval_result} from Phase A — OA papers that
+    verified_retrieval: {pmid: retrieval_result} from Phase A - OA papers that
         passed identity verification. Appraised first, before PRRC uploads.
-    uploads: {pmid: pdf_bytes} — PRRC-uploaded PDFs for paywalled residuals.
+    uploads: {pmid: pdf_bytes} - PRRC-uploaded PDFs for paywalled residuals.
     Both are appraised in one pass before any output is generated.
     """
     db_path = db_path or config.DB_PATH

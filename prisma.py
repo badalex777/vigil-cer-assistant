@@ -26,6 +26,7 @@ class PrismaCounts:
     assessed: int = 0              # reports assessed for eligibility (full appraisal)
     excluded_eligibility: int = 0
     included: int = 0
+    registry_evidence: int = 0     # trial registrations counted within `included`
 
     def as_dict(self):
         return asdict(self)
@@ -138,20 +139,28 @@ def counts_from_run(records: list[dict], duplicates: int) -> PrismaCounts:
     screened = len(records)
     included_screen = [r for r in records if r.get("screen_verdict") == "include"]
     excluded_screen = sum(1 for r in records if r.get("screen_verdict") == "exclude")
-    # V1 abstracts-only: "sought for retrieval" == screened-in; "not retrieved"
+    # Trial registrations are counted as included registry evidence, not routed
+    # through the paper retrieval/appraisal funnel - pull them out before
+    # computing "sought"/"not retrieved"/"assessed" (paper-only stages).
+    registry_screen = [r for r in included_screen
+                       if r.get("appraisal_status") == "registry_evidence"]
+    paper_screen = [r for r in included_screen
+                    if r.get("appraisal_status") != "registry_evidence"]
+    # V1 abstracts-only: "sought for retrieval" == screened-in papers; "not retrieved"
     # == those flagged appraisal_incomplete; assessed == appraisal complete.
-    sought = len(included_screen)
-    not_retrieved = sum(1 for r in included_screen
+    sought = len(paper_screen)
+    not_retrieved = sum(1 for r in paper_screen
                         if r.get("appraisal_status") == "appraisal_incomplete")
     assessed = sought - not_retrieved
     excluded_elig = 0
-    included = sum(1 for r in included_screen
-                   if r.get("appraisal_status") == "complete")
+    appraised_included = sum(1 for r in paper_screen
+                             if r.get("appraisal_status") == "complete")
+    included = appraised_included + len(registry_screen)
     return PrismaCounts(
         db_records=db_records, register_records=0,
         duplicates_removed=duplicates, auto_ineligible=0, other_removed=0,
         screened=screened, excluded_screening=excluded_screen,
         reports_sought=sought, reports_not_retrieved=not_retrieved,
         assessed=assessed, excluded_eligibility=excluded_elig,
-        included=included,
+        included=included, registry_evidence=len(registry_screen),
     )

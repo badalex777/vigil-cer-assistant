@@ -81,6 +81,7 @@ def build_search_report(profile, queries: dict, counts, prisma_svg: str,
 
     md.append("\n## Results - counts per stage")
     c = counts.as_dict()
+    registry = [r for r in incl if r.get("appraisal_status") == "registry_evidence"]
     incomplete = [r for r in incl if r.get("appraisal_status") == "appraisal_incomplete"]
     appraised = [r for r in incl if r.get("appraisal_status") == "complete"]
 
@@ -98,9 +99,12 @@ def build_search_report(profile, queries: dict, counts, prisma_svg: str,
     md.append(f"- Full text appraised (MEDDEV A6): {len(appraised)} - "
               f"auto-retrieved {n_pmc + n_uw} (PMC {n_pmc}, Unpaywall {n_uw}), "
               f"PRRC upload {n_upload}")
+    md.append(f"- Trial registrations identified (registry evidence; counted as "
+              f"included, never routed to full-text appraisal): {len(registry)}")
     md.append(f"- Appraisal incomplete (no open-access copy; awaiting upload): "
               f"{len(incomplete)}")
-    md.append(f"- **Studies fully appraised and included in analysis: {c['included']}**")
+    md.append(f"- **Studies fully appraised and included in analysis: {c['included']}** "
+              f"(full-text appraised {len(appraised)} + registry evidence {len(registry)})")
 
     def ref_src(r):
         labels = {"pmc_xml": "PMC OA", "unpaywall_pdf": "Unpaywall OA",
@@ -113,6 +117,15 @@ def build_search_report(profile, queries: dict, counts, prisma_svg: str,
 
     md.append("\n### Fully appraised studies (full text reviewed)")
     md += [ref_src(r) for r in appraised] or ["- (none yet - awaiting retrieval/upload)"]
+
+    if registry:
+        md.append("\n### Trial registrations identified (registry evidence)")
+        md.append("*These are trial registrations (e.g. ClinicalTrials.gov), not "
+                  "published papers. They are counted as included evidence that a "
+                  "study exists - including unpublished studies - per the "
+                  "publication-bias expectation in MEDDEV 2.7/1 rev 4. A registration "
+                  "is never routed to PDF upload or full-text appraisal.*")
+        md += [ref(r) for r in registry]
 
     unverified = [r for r in incomplete
                   if r.get("retrieval_source") == "auto_unverified"]
@@ -144,18 +157,23 @@ def build_search_report(profile, queries: dict, counts, prisma_svg: str,
 
 def build_cer_section(profile, appraised_records: list[dict],
                       incomplete_records: list[dict],
-                      pms_signals: list[dict], call=None) -> str:
+                      pms_signals: list[dict], registry_records: list[dict] = None,
+                      call=None) -> str:
     """The CER first-draft literature analysis section (LLM-assembled from
     extracted data only). MEDDEV 2.7/1 rev 4 ?11 / Appendix A9.
 
     Narrative is built from FULLY APPRAISED (full-text) papers. Papers still
     `appraisal incomplete` are passed as an explicit list so the draft flags them
     rather than silently using thin abstract data as if it were appraised.
+    `registry_records` (trial registrations) are a distinct evidence type - counted
+    as included registry evidence, never as "full text not retrieved" - and are
+    appended as their own deterministic section, not folded into the LLM narrative.
 
     `call` is a text-returning callable (model, system, user, max_tokens) -> str.
     Defaults to llm.call_text; tests inject a stub."""
     from llm import call_text
     call = call or call_text
+    registry_records = registry_records or []
     extracted = []
     for r in appraised_records:
         if r.get("extraction_json"):
@@ -176,4 +194,18 @@ def build_cer_section(profile, appraised_records: list[dict],
         appraisal_incomplete=json.dumps(incomplete, indent=2) if incomplete else "[none]",
         pms_signals=json.dumps(pms_signals, indent=2) if pms_signals else "[none]",
     )
-    return call(config.MODEL_DRAFT, _SYSTEM, user, config.MAX_TOKENS_DRAFT)
+    narrative = call(config.MODEL_DRAFT, _SYSTEM, user, config.MAX_TOKENS_DRAFT)
+    if not registry_records:
+        return narrative
+
+    lines = [narrative,
+             "\n### Trial registrations identified (registry evidence)",
+             "*The following trial registrations were identified during the search "
+             "and are counted as included registry evidence (evidence that a study "
+             "exists, including unpublished studies), not as full text not "
+             "retrieved. They are not routed to full-text appraisal.*"]
+    for r in registry_records:
+        rid = r.get("pmid") or r.get("registry_id") or ""
+        lines.append(f"- {rid} - {r.get('title','')} "
+                     f"({r.get('journal','ClinicalTrials.gov')}, {r.get('year','')})")
+    return "\n".join(lines)

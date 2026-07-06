@@ -807,6 +807,20 @@ def step_research():
 def step_phase_b():
     st.header("5. Phase B - Manual Upload")
     profile = _profile_from_state()
+
+    if ss.phase_b is not None:
+        st.markdown('<span class="muted">Full-text appraisal has already run for '
+                    'this run. Read-only summary below - to change anything, start '
+                    'a new evaluation.</span>', unsafe_allow_html=True)
+        records = db.retrieval_list(config.DB_PATH, ss.run_id)
+        st.write(f"{len(records)} included record(s):")
+        for r in records:
+            rid = r.get("pmid") or r.get("registry_id") or r.get("external_id") or "-"
+            st.markdown(f"- **{rid}** - retrieval_source: "
+                       f"`{r.get('retrieval_source') or '-'}`, appraisal_status: "
+                       f"`{r.get('appraisal_status') or '-'}`")
+        return
+
     out = ss.phase_a
     manual = out["manual_upload_list"]
 
