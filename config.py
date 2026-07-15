@@ -112,3 +112,11 @@ PROMPT_EXTRACT       = "prompts/extract_v1.txt"
 PROMPT_APPRAISE      = "prompts/appraise_fulltext_v1.txt"
 PROMPT_DRAFT         = "prompts/draft_section_v1.txt"
 PROMPT_CER_NARRATIVE = "prompts/cer_narrative_v1.txt"
+
+# --- DEV-ONLY: Device Profile prefill (Block 5U) -------------------------------
+# When on, step_device_profile() seeds its form from demo_fixtures.PORTAVAC_DEMO_PROFILE
+# instead of an empty dict, so a developer isn't re-typing the test device on every
+# run. MUST default OFF: the shipped product's Device Profile form is always empty
+# unless a developer explicitly sets VIGIL_DEMO_PREFILL=1 in their own shell/.env -
+# never set it in a committed config.
+DEMO_PREFILL = os.getenv("VIGIL_DEMO_PREFILL", "0") == "1"

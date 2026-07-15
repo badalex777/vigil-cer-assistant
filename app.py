@@ -28,6 +28,7 @@ import pubmed
 import outputs
 import pipeline
 import draft
+import demo_fixtures
 from device_profile import DeviceProfile
 import ui_theme
 
@@ -213,7 +214,11 @@ def step_device_profile():
     st.markdown('<span class="muted">Define the device and the scope of the clinical '
                 'evaluation. This scope is frozen when you lock the run, so it is fully '
                 'auditable.</span>', unsafe_allow_html=True)
-    d = ss.profile_dict or {}
+    # DEV ONLY (Block 5U): config.DEMO_PREFILL defaults OFF - the shipped form is
+    # always empty. A developer opts in locally via VIGIL_DEMO_PREFILL=1 to seed
+    # the form from demo_fixtures for fast iteration; never set in committed config.
+    d = ss.profile_dict or (
+        demo_fixtures.PORTAVAC_DEMO_PROFILE if config.DEMO_PREFILL else {})
     _ro = ss.get("_readonly", False)
 
     st.subheader("Device")
