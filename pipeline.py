@@ -296,6 +296,15 @@ def run_search_and_screen(profile, db_path=None, retmax=None, run_id=None,
     }
 
 
+def _friendly_model_name(model_id: str) -> str:
+    """Derive a display name (e.g. 'Claude Sonnet') from a model id, so progress
+    text stays correct if config ever points appraisal at a different model."""
+    for family in ("opus", "sonnet", "haiku"):
+        if family in model_id.lower():
+            return f"Claude {family.capitalize()}"
+    return model_id
+
+
 def run_fulltext_appraisal(profile, run_id, uploads: dict, db_path=None,
                            duplicates=0, queries=None, verified_retrieval=None,
                            progress=lambda s: None):
@@ -309,13 +318,15 @@ def run_fulltext_appraisal(profile, run_id, uploads: dict, db_path=None,
     db_path = db_path or config.DB_PATH
     queries = queries or pubmed.build_track_queries(profile)
 
+    model_label = _friendly_model_name(config.MODEL_APPRAISE)
+
     if verified_retrieval:
         progress(f"Full-text appraisal on {len(verified_retrieval)} verified "
-                 f"open-access paper(s) (Claude Opus)...")
+                 f"open-access paper(s) ({model_label})...")
         appraise.run_from_retrieval(db_path, run_id, profile, verified_retrieval,
                                     progress=progress)
 
-    progress(f"Full-text appraisal on {len(uploads)} uploaded paper(s) (Claude Opus)...")
+    progress(f"Full-text appraisal on {len(uploads)} uploaded paper(s) ({model_label})...")
     appraise.run_from_uploads(db_path, run_id, profile, uploads, progress=progress)
 
     progress("Building PRISMA, search report, and CER draft...")
