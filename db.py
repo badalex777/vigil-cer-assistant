@@ -100,7 +100,11 @@ CREATE TABLE IF NOT EXISTS run_state (
     locked_at             REAL,
     running_at            REAL,
     phase_b_at            REAL,
-    complete_at           REAL
+    complete_at           REAL,
+    appraisal_claimed_at  REAL                  -- set atomically by claim_appraisal();
+                                                 -- guards pipeline.run_fulltext_appraisal
+                                                 -- (real LLM cost) against firing twice
+                                                 -- for the same run_id
 );
 """
 
@@ -169,19 +173,33 @@ _RECORDS_EXPECTED_COLUMNS = {
 }
 
 
+_RUN_STATE_EXPECTED_COLUMNS = {
+    "appraisal_claimed_at": "REAL",
+}
+
+
 def _migrate_schema(db_path: str):
     """Add any missing expected columns to existing tables (idempotent)."""
     with connect(db_path) as c:
         existing = {row["name"] for row in
                     c.execute("PRAGMA table_info(records)").fetchall()}
-        if not existing:
-            return  # table will have been created fresh with the full schema
-        for col, ddl in _RECORDS_EXPECTED_COLUMNS.items():
-            if col not in existing:
-                try:
-                    c.execute(f"ALTER TABLE records ADD COLUMN {col} {ddl}")
-                except Exception:
-                    pass  # column added concurrently or not critical
+        if existing:
+            for col, ddl in _RECORDS_EXPECTED_COLUMNS.items():
+                if col not in existing:
+                    try:
+                        c.execute(f"ALTER TABLE records ADD COLUMN {col} {ddl}")
+                    except Exception:
+                        pass  # column added concurrently or not critical
+
+        rs_existing = {row["name"] for row in
+                       c.execute("PRAGMA table_info(run_state)").fetchall()}
+        if rs_existing:
+            for col, ddl in _RUN_STATE_EXPECTED_COLUMNS.items():
+                if col not in rs_existing:
+                    try:
+                        c.execute(f"ALTER TABLE run_state ADD COLUMN {col} {ddl}")
+                    except Exception:
+                        pass
 
 
 def log(db_path: str, run_id: str, stage: str, message: str):
@@ -447,6 +465,32 @@ def mark_phase_b(db_path, run_id, actor=""):
 
 def mark_complete(db_path, run_id, actor=""):
     _advance(db_path, run_id, "complete", actor)
+
+
+def claim_appraisal(db_path, run_id, stale_after_s=1800):
+    """Atomically claim the right to run Phase B appraisal for this run_id.
+
+    pipeline.run_fulltext_appraisal bills a real LLM call per paper, so it must
+    never fire twice for one run - whatever the trigger (a duplicate Streamlit
+    script execution, a WebSocket-reconnect rerun, a double click). Session
+    state alone (e.g. a `ss.appraising` flag) does not protect against this:
+    it does not survive a second, independent script execution for the same
+    session. This does, because the claim lives in the database, keyed to
+    run_id, and the UPDATE is a single atomic statement (SQLite serializes
+    writers), so only one caller can ever win it.
+
+    Returns True if this call won the claim (proceed with appraisal), False if
+    another invocation already holds it (back off, do not re-run). A claim
+    older than stale_after_s (default 30 min) is treated as abandoned - e.g.
+    the process that won it crashed mid-run - and can be re-claimed, so a
+    stuck run always recovers instead of being locked out forever.
+    """
+    with connect(db_path) as c:
+        cur = c.execute(
+            "UPDATE run_state SET appraisal_claimed_at=? WHERE run_id=? "
+            "AND (appraisal_claimed_at IS NULL OR appraisal_claimed_at < ?)",
+            (time.time(), run_id, time.time() - stale_after_s))
+        return cur.rowcount == 1
 
 
 def approved_queries(db_path, run_id):

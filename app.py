@@ -27,6 +27,7 @@ import db
 import pubmed
 import outputs
 import pipeline
+import draft
 from device_profile import DeviceProfile
 import ui_theme
 
@@ -847,14 +848,18 @@ def step_phase_b():
             f"minutes. Appraised {done} of {total}.")
 
         try:
-            pb = pipeline.run_fulltext_appraisal(
-                profile, ss.run_id, ss._phase_b_uploads or {}, db_path=config.DB_PATH,
-                duplicates=out.get("_duplicates", 0), queries=ss.queries,
-                verified_retrieval=out.get("verified_retrieval", {}),
-                progress=lambda s: None)
-            ss.phase_b = pb
-            db.mark_complete(config.DB_PATH, ss.run_id,
-                             actor=profile.evaluator_name or "PRRC")
+            if db.claim_appraisal(config.DB_PATH, ss.run_id):
+                pb = pipeline.run_fulltext_appraisal(
+                    profile, ss.run_id, ss._phase_b_uploads or {}, db_path=config.DB_PATH,
+                    duplicates=out.get("_duplicates", 0), queries=ss.queries,
+                    verified_retrieval=out.get("verified_retrieval", {}),
+                    progress=lambda s: None)
+                ss.phase_b = pb
+                db.mark_complete(config.DB_PATH, ss.run_id,
+                                 actor=profile.evaluator_name or "PRRC")
+            # else: another invocation already claimed appraisal for this run
+            # (e.g. a duplicate Streamlit rerun) - back off without calling
+            # run_fulltext_appraisal again; it bills a real LLM call per paper.
         finally:
             load_box.empty()
             ss.appraising = False
@@ -934,7 +939,8 @@ def step_documents():
         state_row = db.get_run_state(config.DB_PATH, run_id)
         audit = outputs.generate_audit_trail_csv(log_rows, state_row)
         cer = outputs.generate_cer_md(profile, run_id, appraised, incomplete,
-                                      pms_signals=[], counts=pc, scope_hash=scope_hash)
+                                      pms_signals=[], counts=pc, scope_hash=scope_hash,
+                                      narrative_fn=draft.make_narrative_fn())
 
         # 5 narrative documents -> Word (.docx); audit trail stays CSV (data export)
         import docx_export

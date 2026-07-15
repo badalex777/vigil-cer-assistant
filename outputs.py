@@ -595,7 +595,8 @@ def generate_cer_md(profile, run_id: str, appraised_records: list[dict],
     a = out.append
 
     a("## 1. Summary\n")
-    a(_narr("summary", {"profile": profile, "n_appraised": len(appraised_records)}))
+    a(_narr("summary", {"profile": profile, "n_appraised": len(appraised_records),
+                        "appraised": appraised_records}))
     a("")
 
     a("## 2. Scope of the clinical evaluation\n")
@@ -611,7 +612,8 @@ def generate_cer_md(profile, run_id: str, appraised_records: list[dict],
     a("## 3. Clinical background, current knowledge, state of the art\n")
     a(_narr("state_of_art", {"profile": profile,
                              "condition": _as_text(profile.medical_condition),
-                             "technology": _as_text(profile.technology_category)}))
+                             "technology": _as_text(profile.technology_category),
+                             "appraised": appraised_records}))
     a("\n*State-of-the-art / similar-device data is supportive CONTEXT and does not "
       "constitute clinical data under the MDR (MDCG 2020-6).*\n")
 

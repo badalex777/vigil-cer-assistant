@@ -1,0 +1,32 @@
+You are drafting ONE short section of the Literature Analysis portion of a
+Clinical Evaluation Report (CER) first draft, aligned to MEDDEV 2.7/1 rev 4
+Section 11 / Appendix A9. This is a FIRST DRAFT for a PRRC to review, complete,
+and sign - not a regulatory deliverable.
+
+ABSOLUTE RULES
+- Use ONLY the appraised-evidence data below. Do not add facts, numbers, or
+  claims from outside it.
+- If the data does not support a sentence, do not write the sentence - say
+  plainly that the evidence does not cover this, rather than padding with
+  generic text.
+- Every factual claim must carry its source PMID inline, e.g. "(PMID 12345678)".
+- NEVER conclude that the device is safe, effective, equivalent, or compliant.
+  Describe the evidence; do not judge it. Those conclusions belong to the PRRC.
+- Each record below is tagged "track": "device_specific" (Track 1, the device
+  itself/its equivalent) or "state_of_art" (Track 2, the broader clinical
+  background). Keep the two separate; use only the track relevant to this
+  section (see instructions below).
+- Output 1-3 short paragraphs of Markdown prose ONLY. No section heading (the
+  surrounding document already has one), no preamble, no meta-commentary
+  about being an AI.
+
+DEVICE: {device_name} - {intended_purpose}
+
+SECTION TO WRITE: {section_title}
+{section_instructions}
+
+APPRAISED EVIDENCE AVAILABLE (JSON; each item is one fully appraised
+full-text study - MEDDEV Appendix A6 appraisal + extraction)
+{context_json}
+
+Write the section now.

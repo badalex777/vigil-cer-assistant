@@ -107,7 +107,8 @@ MAX_SCREEN_RECORDS = int(os.getenv("VIGIL_MAX_SCREEN_RECORDS", "800"))
 MAX_EXTRACT_RECORDS = int(os.getenv("VIGIL_MAX_EXTRACT_RECORDS", "500"))
 
 # --- Prompt template versions (external, versioned) ---------------------------
-PROMPT_SCREEN   = "prompts/screen_v1.txt"
-PROMPT_EXTRACT  = "prompts/extract_v1.txt"
-PROMPT_APPRAISE = "prompts/appraise_fulltext_v1.txt"
-PROMPT_DRAFT    = "prompts/draft_section_v1.txt"
+PROMPT_SCREEN        = "prompts/screen_v1.txt"
+PROMPT_EXTRACT       = "prompts/extract_v1.txt"
+PROMPT_APPRAISE      = "prompts/appraise_fulltext_v1.txt"
+PROMPT_DRAFT         = "prompts/draft_section_v1.txt"
+PROMPT_CER_NARRATIVE = "prompts/cer_narrative_v1.txt"

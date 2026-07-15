@@ -36,28 +36,22 @@ import draft
 
 
 def _build_outputs(db_path, run_id, profile, queries, duplicates):
-    """Shared: derive PRISMA, build search report + CER draft, persist, return dict."""
+    """Shared: derive PRISMA, build search report, persist, return dict.
+
+    The CER itself is NOT built here. It is generated exactly once, on demand,
+    when the PRRC opens the Document Set step (app.py step 6) via
+    outputs.generate_cer_md(narrative_fn=draft.make_narrative_fn()) - building
+    it here too would call the LLM narrative a second time for a copy nothing
+    ever reads.
+    """
     all_rows = db.get_records(db_path, run_id)
     counts = prisma.counts_from_run(all_rows, duplicates)
     prisma_svg = prisma.render_svg(counts, f"PRISMA 2020 - {profile.device_name}")
     search_report = draft.build_search_report(profile, queries, counts,
                                               prisma_svg, all_rows)
     pms_signals = db.get_cer_relevant_signals(db_path, profile.device_name)
-    # The CER narrative is built from FULLY APPRAISED papers; abstract-only
-    # (appraisal_incomplete) papers are listed separately and clearly flagged.
-    appraised = db.get_records(
-        db_path, run_id, "screen_verdict='include' AND appraisal_status='complete'")
-    incomplete = db.get_records(
-        db_path, run_id,
-        "screen_verdict='include' AND appraisal_status='appraisal_incomplete'")
-    registry = db.get_records(
-        db_path, run_id,
-        "screen_verdict='include' AND appraisal_status='registry_evidence'")
-    cer_section = draft.build_cer_section(profile, appraised, incomplete, pms_signals,
-                                          registry_records=registry)
 
     db.save_output(db_path, run_id, "search_report", search_report)
-    db.save_output(db_path, run_id, "cer_draft", cer_section)
     db.save_output(db_path, run_id, "prisma_svg", prisma_svg)
     return {
         "run_id": run_id,
@@ -65,7 +59,6 @@ def _build_outputs(db_path, run_id, profile, queries, duplicates):
         "queries": queries,
         "counts": counts.as_dict(),
         "search_report": search_report,
-        "cer_section": cer_section,
         "prisma_svg": prisma_svg,
         "retrieval_list": db.retrieval_list(db_path, run_id),
         "manual_upload_list": db.manual_upload_list(db_path, run_id),

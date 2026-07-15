@@ -180,9 +180,23 @@ def main():
     assert "PMC OA" in b["search_report"], "report should record PMC as a source"
 
     for name, key in [("vigil_search_report.md","search_report"),
-                      ("vigil_prisma.svg","prisma_svg"),
-                      ("vigil_cer_draft.md","cer_section")]:
+                      ("vigil_prisma.svg","prisma_svg")]:
         with open(f"/tmp/{name}","w") as f: f.write(b[key])
+
+    # CER Word-doc narrative is generated on demand (app.py step 6), not by
+    # the pipeline - exercise that path here with the same fakes.
+    import outputs
+    import draft as draft_mod
+    records = db.retrieval_list(db_path, a["run_id"])
+    appraised = [r for r in records if r.get("appraisal_status") == "complete"]
+    incomplete = [r for r in records if r.get("appraisal_status") == "appraisal_incomplete"]
+    cer = outputs.generate_cer_md(prof, a["run_id"], appraised, incomplete,
+                                  counts=b["counts"], scope_hash=prof.run_scope_hash(),
+                                  narrative_fn=draft_mod.make_narrative_fn(call=fake_call_text))
+    assert "Not generated in this offline render" not in cer, \
+        "narrative_fn should produce real (fake-LLM) prose, not the placeholder"
+    with open("/tmp/vigil_cer_draft.md","w") as f: f.write(cer)
+
     print("\nFinal PRISMA counts:", json.dumps(b["counts"]))
     print("All assertions passed. Auto-retrieval + verification gate + manual fallback verified.")
 

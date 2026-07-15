@@ -155,57 +155,98 @@ def build_search_report(profile, queries: dict, counts, prisma_svg: str,
     return "\n".join(md)
 
 
-def build_cer_section(profile, appraised_records: list[dict],
-                      incomplete_records: list[dict],
-                      pms_signals: list[dict], registry_records: list[dict] = None,
-                      call=None) -> str:
-    """The CER first-draft literature analysis section (LLM-assembled from
-    extracted data only). MEDDEV 2.7/1 rev 4 ?11 / Appendix A9.
+# --- CER Word-doc narrative (outputs.generate_cer_md's injectable narrative_fn) -----
+# outputs.generate_cer_md builds the actual downloadable CER (full Appendix A9
+# structure: equivalence table, PRRC judgement placeholders, honest appraisal
+# counts, etc.) and calls narrative_fn(section_key, context) -> str at five
+# descriptive slots. This is the ONLY narrative generator wired into that path -
+# generated once, on demand, when the Document Set step builds the CER.
 
-    Narrative is built from FULLY APPRAISED (full-text) papers. Papers still
-    `appraisal incomplete` are passed as an explicit list so the draft flags them
-    rather than silently using thin abstract data as if it were appraised.
-    `registry_records` (trial registrations) are a distinct evidence type - counted
-    as included registry evidence, never as "full text not retrieved" - and are
-    appended as their own deterministic section, not folded into the LLM narrative.
+_SECTION_TITLES = {
+    "summary": "1. Summary",
+    "state_of_art": "3. Clinical background, current knowledge, state of the art",
+    "evidence_summary": "5. Summary of the clinical data and appraisal",
+    "performance": "6.1 Analysis of the clinical data - Performance",
+    "safety": "6.2 Analysis of the clinical data - Safety",
+}
+
+_SECTION_INSTRUCTIONS = {
+    "summary": (
+        "Give one short paragraph: how many studies were fully appraised, and "
+        "in one sentence what they broadly cover (device-specific vs state of "
+        "the art). Do not repeat exact counts already stated elsewhere in the "
+        "document - keep this to a narrative overview."),
+    "state_of_art": (
+        "Describe current clinical knowledge / standard of care for the "
+        "condition and technology named below, using ONLY records tagged "
+        "\"track\": \"state_of_art\" (Track 2). If none are present, say so "
+        "plainly rather than writing generically.\n"
+        "Condition(s): {condition}\nTechnology: {technology}"),
+    "evidence_summary": (
+        "For each record tagged \"track\": \"device_specific\" (Track 1), "
+        "summarise what the study is and its MEDDEV A6 appraisal "
+        "(methodological quality, relevance, data contribution), citing its "
+        "PMID."),
+    "performance": (
+        "Summarise device performance data reported in the "
+        "\"device_specific\" (Track 1) records, with a PMID citation for "
+        "every figure."),
+    "safety": (
+        "Summarise adverse-event / safety data reported in the "
+        "\"device_specific\" (Track 1) records, with a PMID citation for "
+        "every figure."),
+}
+
+_NO_EVIDENCE_NOTE = ("*No fully appraised full-text evidence is available yet "
+                     "for this section.*")
+
+
+def _record_payload(r: dict) -> dict:
+    """Compact, LLM-ready view of one appraised record: identity + parsed
+    appraisal/extraction data. Never forwards the raw DB row (unrelated
+    columns, an already-JSON-encoded string) into the prompt."""
+    payload = {"pmid": r.get("pmid"), "title": r.get("title", ""),
+              "track": r.get("track", "")}
+    if r.get("extraction_json"):
+        try:
+            payload["appraisal"] = json.loads(r["extraction_json"])
+        except json.JSONDecodeError:
+            pass
+    return payload
+
+
+def make_narrative_fn(call=None):
+    """Build a narrative_fn(section_key, context) -> str for
+    outputs.generate_cer_md: one small, focused LLM call per section, grounded
+    ONLY in context["appraised"] (the fully appraised full-text records
+    outputs.py already computed). Returns an honest placeholder instead of
+    calling the LLM when there is no appraised evidence at all, rather than
+    asking it to write prose from nothing.
 
     `call` is a text-returning callable (model, system, user, max_tokens) -> str.
-    Defaults to llm.call_text; tests inject a stub."""
+    Defaults to llm.call_text; tests inject a stub so this runs offline."""
     from llm import call_text
     call = call or call_text
-    registry_records = registry_records or []
-    extracted = []
-    for r in appraised_records:
-        if r.get("extraction_json"):
-            try:
-                extracted.append(json.loads(r["extraction_json"]))
-            except json.JSONDecodeError:
-                pass
-    incomplete = [
-        {"pmid": r["pmid"], "title": r.get("title", ""),
-         "status": "appraisal_incomplete - full text not retrieved/appraised"}
-        for r in incomplete_records
-    ]
-    tmpl = load_prompt(config.PROMPT_DRAFT)
-    user = tmpl.format(
-        device_name=profile.device_name,
-        intended_purpose=profile.intended_purpose,
-        extracted_json=json.dumps(extracted, indent=2),
-        appraisal_incomplete=json.dumps(incomplete, indent=2) if incomplete else "[none]",
-        pms_signals=json.dumps(pms_signals, indent=2) if pms_signals else "[none]",
-    )
-    narrative = call(config.MODEL_DRAFT, _SYSTEM, user, config.MAX_TOKENS_DRAFT)
-    if not registry_records:
-        return narrative
 
-    lines = [narrative,
-             "\n### Trial registrations identified (registry evidence)",
-             "*The following trial registrations were identified during the search "
-             "and are counted as included registry evidence (evidence that a study "
-             "exists, including unpublished studies), not as full text not "
-             "retrieved. They are not routed to full-text appraisal.*"]
-    for r in registry_records:
-        rid = r.get("pmid") or r.get("registry_id") or ""
-        lines.append(f"- {rid} - {r.get('title','')} "
-                     f"({r.get('journal','ClinicalTrials.gov')}, {r.get('year','')})")
-    return "\n".join(lines)
+    def narrative_fn(section_key, context):
+        appraised = context.get("appraised") or []
+        payload = [_record_payload(r) for r in appraised]
+        if not payload:
+            return _NO_EVIDENCE_NOTE
+        profile = context.get("profile")
+        instructions = _SECTION_INSTRUCTIONS.get(section_key, "")
+        if section_key == "state_of_art":
+            instructions = instructions.format(
+                condition=context.get("condition", ""),
+                technology=context.get("technology", ""))
+        tmpl = load_prompt(config.PROMPT_CER_NARRATIVE)
+        user = tmpl.format(
+            device_name=getattr(profile, "device_name", "") if profile else "",
+            intended_purpose=getattr(profile, "intended_purpose", "") if profile else "",
+            section_title=_SECTION_TITLES.get(section_key, section_key),
+            section_instructions=instructions,
+            context_json=json.dumps(payload, indent=2),
+        )
+        return call(config.MODEL_DRAFT, _SYSTEM, user, config.MAX_TOKENS_DRAFT)
+
+    return narrative_fn
