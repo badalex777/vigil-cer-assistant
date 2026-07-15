@@ -63,6 +63,8 @@ ss.setdefault("_phase_a_thread", None)   # background thread for Phase A
 ss.setdefault("_phase_a_result", None)   # shared result dict written by the thread
 ss.setdefault("_cep_docx_bytes", None)   # cached CEP Word render (avoids per-rerun rebuild)
 ss.setdefault("_docs_cache", None)       # cached step-6 doc set (built list + zip bytes)
+ss.setdefault("appraising", False)       # True while Phase B appraisal is running synchronously
+ss.setdefault("_phase_b_uploads", None)  # PDF uploads captured just before appraisal starts
 
 # SAFETY: the default must be the CHEAP path, never comprehensive. If the env var is
 # missing we cap at 250/track - a missing variable must never trigger a $20 run.
@@ -187,6 +189,15 @@ def _split(s):
 
 def _lines(s):
     return [x.strip() for x in s.split("\n") if x.strip()]
+
+
+def _friendly_model_name(model_id: str) -> str:
+    """Derive a display name (e.g. 'Claude Sonnet') from a model id, so UI copy
+    stays correct if config ever points appraisal at a different model."""
+    for family in ("opus", "sonnet", "haiku"):
+        if family in model_id.lower():
+            return f"Claude {family.capitalize()}"
+    return model_id
 
 
 # =============================================================================
@@ -822,6 +833,36 @@ def step_phase_b():
         return
 
     out = ss.phase_a
+
+    if ss.appraising:
+        # Clean screen only: no uploaders, no button underneath the spinner.
+        records = db.retrieval_list(config.DB_PATH, ss.run_id)
+        total = len(records)
+        done = len([r for r in records if r.get("appraisal_status") == "complete"])
+        model_label = _friendly_model_name(config.MODEL_APPRAISE)
+        load_box = st.empty()
+        ui_theme.loading_card(
+            load_box, "Appraising",
+            f"Appraising full texts with {model_label} - this can take a few "
+            f"minutes. Appraised {done} of {total}.")
+
+        try:
+            pb = pipeline.run_fulltext_appraisal(
+                profile, ss.run_id, ss._phase_b_uploads or {}, db_path=config.DB_PATH,
+                duplicates=out.get("_duplicates", 0), queries=ss.queries,
+                verified_retrieval=out.get("verified_retrieval", {}),
+                progress=lambda s: None)
+            ss.phase_b = pb
+            db.mark_complete(config.DB_PATH, ss.run_id,
+                             actor=profile.evaluator_name or "PRRC")
+        finally:
+            load_box.empty()
+            ss.appraising = False
+            ss._phase_b_uploads = None
+        goto(5)
+        st.rerun()
+        return
+
     manual = out["manual_upload_list"]
 
     st.markdown('<span class="muted">These included papers had no open-access full text. '
@@ -847,26 +888,8 @@ def step_phase_b():
     label = "Run full-text appraisal & build documents" if manual else \
             "Build the document set"
     if st.button(label):
-        load_box = st.empty()
-        ui_theme.loading_card(
-            load_box, "Appraising",
-            "Appraising full texts with Claude Opus - this can take a few minutes.")
-
-        def progress(s):
-            pass  # Phase B blocks; the static card communicates the wait
-
-        try:
-            pb = pipeline.run_fulltext_appraisal(
-                profile, ss.run_id, uploads, db_path=config.DB_PATH,
-                duplicates=out.get("_duplicates", 0), queries=ss.queries,
-                verified_retrieval=out.get("verified_retrieval", {}),
-                progress=progress)
-            ss.phase_b = pb
-            db.mark_complete(config.DB_PATH, ss.run_id,
-                             actor=profile.evaluator_name or "PRRC")
-        finally:
-            load_box.empty()
-        goto(5)
+        ss._phase_b_uploads = uploads
+        ss.appraising = True
         st.rerun()
 
 
