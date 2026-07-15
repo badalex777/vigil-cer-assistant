@@ -91,7 +91,7 @@ def call_json_pdf(model: str, system: str, user: str, pdf_bytes: bytes,
             "`pip install anthropic`. (Offline tests should mock this function.)"
         )
     b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
-    resp = _client.messages.create(
+    resp = _client.with_options(max_retries=config.APPRAISE_MAX_RETRIES).messages.create(
         model=model,
         max_tokens=max_tokens,
         system=system,
@@ -105,6 +105,7 @@ def call_json_pdf(model: str, system: str, user: str, pdf_bytes: bytes,
                 {"type": "text", "text": user},
             ],
         }],
+        timeout=config.APPRAISE_TIMEOUT_S,
     )
     text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
     try:
@@ -124,9 +125,10 @@ def call_json_fulltext_text(model: str, system: str, user: str, fulltext: str,
             "`pip install anthropic`. (Offline tests should mock this function.)"
         )
     composed = f"{user}\n\n--- FULL TEXT (open access) ---\n{fulltext}"
-    resp = _client.messages.create(
+    resp = _client.with_options(max_retries=config.APPRAISE_MAX_RETRIES).messages.create(
         model=model, max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": composed}],
+        timeout=config.APPRAISE_TIMEOUT_S,
     )
     text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
     try:

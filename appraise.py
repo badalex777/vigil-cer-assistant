@@ -52,6 +52,22 @@ def appraise_text(profile, rec, fulltext, call=None):
     return _finish(rec, result)
 
 
+def _safe_appraise(db_path, run_id, rec, fn):
+    """Run one paper's appraisal call, never letting a hang or error on this
+    paper take down the whole loop. On timeout/exception: log pmid + title
+    and fail safe to appraisal_incomplete so the paper is honestly flagged,
+    not silently dropped, and the loop moves on to the next paper."""
+    try:
+        return fn()
+    except Exception as e:
+        pmid = rec["pmid"]
+        db.log(db_path, run_id, "appraise_error",
+               f"PMID {pmid} ({rec.get('title', '')[:200]}): "
+               f"{type(e).__name__}: {e}")
+        return ({"pmid": pmid, "error": "appraisal_exception",
+                 "exception": type(e).__name__}, "appraisal_incomplete")
+
+
 def _finish(rec, result):
     if result.get("_parse_error"):
         # Under-claim: failed appraisal leaves the paper flagged, not promoted.
@@ -85,9 +101,13 @@ def run_from_retrieval(db_path, run_id, profile, retrieval: dict,
         rec = rows[0]
         db.set_retrieval_source(db_path, run_id, pmid, res["status"], res["source_url"])
         if res["kind"] == "pdf":
-            appraisal, status = appraise_pdf(profile, rec, res["pdf_bytes"], call=pdf_call)
+            appraisal, status = _safe_appraise(
+                db_path, run_id, rec,
+                lambda: appraise_pdf(profile, rec, res["pdf_bytes"], call=pdf_call))
         else:  # 'xml_text'
-            appraisal, status = appraise_text(profile, rec, res["text"], call=text_call)
+            appraisal, status = _safe_appraise(
+                db_path, run_id, rec,
+                lambda: appraise_text(profile, rec, res["text"], call=text_call))
         db.set_fulltext_appraisal(db_path, run_id, pmid, appraisal, status)
         results[pmid] = status
         progress(f"  appraised PMID {pmid} ({res['status']}): {status}")
@@ -121,7 +141,9 @@ def run_from_uploads(db_path, run_id, profile, uploads: dict, pdf_call=None,
         db.attach_fulltext(db_path, run_id, pmid,
                            f"{config.UPLOADS_DIR}/{run_id}/{pmid}.pdf")
         db.set_retrieval_source(db_path, run_id, pmid, "prrc_upload", None)
-        appraisal, status = appraise_pdf(profile, rec, pdf_bytes, call=pdf_call)
+        appraisal, status = _safe_appraise(
+            db_path, run_id, rec,
+            lambda: appraise_pdf(profile, rec, pdf_bytes, call=pdf_call))
         db.set_fulltext_appraisal(db_path, run_id, pmid, appraisal, status)
         results[pmid] = status
         progress(f"  appraised uploaded PMID {pmid}: {status}")

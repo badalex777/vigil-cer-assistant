@@ -49,6 +49,14 @@ MAX_TOKENS_EXTRACT  = 4096
 MAX_TOKENS_APPRAISE = 8192
 MAX_TOKENS_DRAFT    = 8192
 
+# Hard per-paper ceiling on the full-text appraisal LLM call. Without this the
+# Anthropic SDK's default 600s read timeout (x up to 3 attempts incl. retries)
+# lets ONE slow/problematic paper stall Phase B for up to 30 minutes and burn
+# credits on retries. APPRAISE_MAX_RETRIES caps retries so a timeout can only
+# double the cost of one paper, never multiply it further.
+APPRAISE_TIMEOUT_S = int(os.getenv("VIGIL_APPRAISE_TIMEOUT_S", "90"))
+APPRAISE_MAX_RETRIES = int(os.getenv("VIGIL_APPRAISE_MAX_RETRIES", "1"))
+
 # Where the PRRC's uploaded full-text PDFs are stored (per run, per PMID).
 UPLOADS_DIR = os.getenv("VIGIL_UPLOADS", "uploads")
 
