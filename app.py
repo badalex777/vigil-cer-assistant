@@ -67,6 +67,7 @@ ss.setdefault("_cep_docx_bytes", None)   # cached CEP Word render (avoids per-re
 ss.setdefault("_docs_cache", None)       # cached step-6 doc set (built list + zip bytes)
 ss.setdefault("appraising", False)       # True while Phase B appraisal is running synchronously
 ss.setdefault("_phase_b_uploads", None)  # PDF uploads captured just before appraisal starts
+ss.setdefault("_appraising_started", False)  # True once the spinner-only flush rerun has fired
 
 # SAFETY: the default must be the CHEAP path, never comprehensive. If the env var is
 # missing we cap at 250/track - a missing variable must never trigger a $20 run.
@@ -200,6 +201,28 @@ def _friendly_model_name(model_id: str) -> str:
         if family in model_id.lower():
             return f"Claude {family.capitalize()}"
     return model_id
+
+
+def _friendly_retrieval_row(r) -> str:
+    """Map a record's internal retrieval_source / appraisal_status codes to a
+    plain-English summary line - the Phase B read-only list must read like a
+    PRRC summary, not leaked debug output."""
+    is_trial = r.get("entry_type") == "trial_registration"
+    rid = r.get("pmid") or r.get("registry_id") or r.get("external_id") or "-"
+    label = rid if is_trial else f"PMID {rid}"
+
+    status = r.get("appraisal_status")
+    source = r.get("retrieval_source")
+    if is_trial or status == "registry_evidence":
+        desc = "Trial registration (registry evidence)"
+    elif status == "complete":
+        desc = ("Fully appraised (uploaded PDF)" if source == "prrc_upload"
+                else "Fully appraised (open-access)")
+    elif status == "appraisal_incomplete":
+        desc = "Awaiting full text (no open-access copy)"
+    else:
+        desc = "Not yet appraised"
+    return f"- **{label}** - {desc}"
 
 
 # =============================================================================
@@ -729,7 +752,8 @@ def _show_orphaned_run_ui():
         for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
                   "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
                   "_phase_a_thread", "_phase_a_result", "n_equivalents",
-                  "_cep_docx_bytes"]:
+                  "_cep_docx_bytes", "_docs_cache", "appraising",
+                  "_phase_b_uploads", "_appraising_started"]:
             ss.pop(k, None)
         st.rerun()
 
@@ -832,10 +856,7 @@ def step_phase_b():
         records = db.retrieval_list(config.DB_PATH, ss.run_id)
         st.write(f"{len(records)} included record(s):")
         for r in records:
-            rid = r.get("pmid") or r.get("registry_id") or r.get("external_id") or "-"
-            st.markdown(f"- **{rid}** - retrieval_source: "
-                       f"`{r.get('retrieval_source') or '-'}`, appraisal_status: "
-                       f"`{r.get('appraisal_status') or '-'}`")
+            st.markdown(_friendly_retrieval_row(r))
         return
 
     out = ss.phase_a
@@ -851,6 +872,19 @@ def step_phase_b():
             load_box, "Appraising",
             f"Appraising full texts with {model_label} - this can take a few "
             f"minutes. Appraised {done} of {total}.")
+
+        if not ss._appraising_started:
+            # The appraisal call below is a long, blocking one. Streamlit only
+            # finalizes removal of the previous run's elements (the uploaders
+            # and button) once THIS script run completes - so if the blocking
+            # call started immediately, those old widgets would sit on screen,
+            # dimmed, for the whole wait. Instead, end this run right after
+            # drawing the spinner: that run completes in an instant, so the
+            # frontend fully swaps in the clean spinner screen before the slow
+            # call ever starts.
+            ss._appraising_started = True
+            st.rerun()
+            return
 
         try:
             if db.claim_appraisal(config.DB_PATH, ss.run_id):
@@ -868,6 +902,7 @@ def step_phase_b():
         finally:
             load_box.empty()
             ss.appraising = False
+            ss._appraising_started = False
             ss._phase_b_uploads = None
         goto(5)
         st.rerun()
@@ -988,7 +1023,8 @@ def step_documents():
         for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
                   "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
                   "_phase_a_thread", "_phase_a_result", "_cep_docx_bytes",
-                  "_docs_cache"]:
+                  "_docs_cache", "appraising", "_phase_b_uploads",
+                  "_appraising_started"]:
             ss.pop(k, None)
         st.rerun()
 
