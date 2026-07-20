@@ -257,8 +257,9 @@ def make_narrative_fn(call=None):
     calling the LLM when there is no appraised evidence at all, rather than
     asking it to write prose from nothing.
 
-    `call` is a text-returning callable (model, system, user, max_tokens) -> str.
-    Defaults to llm.call_text; tests inject a stub so this runs offline."""
+    `call` is a text-returning callable (model, system, user_stable,
+    user_variable, max_tokens) -> str. Defaults to llm.call_text; tests inject
+    a stub so this runs offline."""
     from llm import call_text, split_stable_variable
     call = call or call_text
 
@@ -279,22 +280,22 @@ def make_narrative_fn(call=None):
                 condition=context.get("condition", ""),
                 technology=context.get("technology", ""))
 
-        # Device fields + the (now track-scoped) evidence JSON come first,
-        # section title/instructions last - the byte order a future
-        # cache_control breakpoint needs (the evidence JSON is identical
-        # across every call that shares this section's track scope; the
-        # trailing section text varies on every call). No breakpoint is set
-        # here yet - just the ordering (Block 5X).
-        user = (
+        # Stable prefix: device fields + the (now track-scoped) evidence JSON -
+        # identical across every call that shares this section's track scope
+        # (e.g. evidence_summary/performance/safety all share the same
+        # device-specific set), so it's the cacheable block. Section
+        # title/instructions vary on every call and go in the uncached
+        # suffix (Block 5X).
+        stable = (
             device_tmpl.format(
                 device_name=getattr(profile, "device_name", "") if profile else "",
                 intended_purpose=getattr(profile, "intended_purpose", "") if profile else "")
             + evidence_tmpl.format(context_json=json.dumps(payload, indent=2))
-            + section_tmpl.format(
-                section_title=_SECTION_TITLES.get(section_key, section_key),
-                section_instructions=instructions,
-            )
         )
-        return call(config.MODEL_DRAFT, _SYSTEM, user, config.MAX_TOKENS_DRAFT)
+        variable = section_tmpl.format(
+            section_title=_SECTION_TITLES.get(section_key, section_key),
+            section_instructions=instructions,
+        )
+        return call(config.MODEL_DRAFT, _SYSTEM, stable, variable, config.MAX_TOKENS_DRAFT)
 
     return narrative_fn

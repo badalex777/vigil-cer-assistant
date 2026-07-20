@@ -113,8 +113,8 @@ def main():
             print("    ABSTRACT: [EMPTY - nothing for the screener to read]")
 
         if do_screen:
-            user = screen_mod._fmt(profile, rec)
-            result = call_json(config.MODEL_SCREEN, SYSTEM, user,
+            stable, variable = screen_mod._fmt(profile, rec)
+            result = call_json(config.MODEL_SCREEN, SYSTEM, stable, variable,
                                config.MAX_TOKENS_SCREEN)
             if result.get("_parse_error"):
                 verdict = "uncertain"

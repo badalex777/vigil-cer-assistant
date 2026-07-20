@@ -4,24 +4,36 @@ import json
 
 import config
 import db
-from llm import load_prompt, call_json
+from llm import load_prompt, call_json, split_stable_variable
 
 _SYSTEM = "You output only valid JSON. No markdown, no preamble. Unknown stays unknown."
 
+# The opening intro + first HARD RULES bullet are the only genuinely
+# record-independent part of this template - {pmid} is already embedded in
+# the very next bullet ("traceable to this source (PMID {pmid})"), so the
+# cacheable prefix has to end before that, not at the SOURCE header (Block 5X).
+_STABLE_MARKER = "\n- Every extracted value must be traceable to this source"
 
-def _fmt(profile, rec) -> str:
+
+def _fmt(profile, rec) -> tuple[str, str]:
+    """Return (stable, variable). stable is the cacheable prefix (the
+    record-independent opening lines - no per-item text). variable is
+    everything from the first PMID-bearing rule onward, formatted with this
+    record's pmid/title/abstract."""
     tmpl = load_prompt(config.PROMPT_EXTRACT)
-    return tmpl.format(
+    stable_tmpl, variable_tmpl = split_stable_variable(tmpl, _STABLE_MARKER)
+    variable = variable_tmpl.format(
         pmid=rec["pmid"],
         title=rec.get("title", ""),
         abstract=rec.get("abstract", "") or "[no abstract available]",
     )
+    return stable_tmpl, variable
 
 
 def extract_record(profile, rec, call=None) -> tuple[dict, str]:
     call = call or call_json
-    user = _fmt(profile, rec)
-    result = call(config.MODEL_EXTRACT, _SYSTEM, user, config.MAX_TOKENS_EXTRACT)
+    stable, variable = _fmt(profile, rec)
+    result = call(config.MODEL_EXTRACT, _SYSTEM, stable, variable, config.MAX_TOKENS_EXTRACT)
     if result.get("_parse_error"):
         return ({"pmid": rec["pmid"], "error": "extraction_parse_failed"},
                 "appraisal_incomplete")

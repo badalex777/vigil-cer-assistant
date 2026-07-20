@@ -3,33 +3,47 @@ from __future__ import annotations
 
 import config
 import db
-from llm import load_prompt, call_json
+from llm import load_prompt, call_json, split_stable_variable
 
 _SYSTEM = "You output only valid JSON. No markdown, no preamble."
 
+# Everything before the per-record RECORD block (rules, device profile, track,
+# inclusion/exclusion criteria) is identical across every record screened
+# against the same track in a run - the cacheable prefix (Block 5X).
+_STABLE_MARKER = "\nRECORD\n"
 
-def _fmt(profile, rec) -> str:
+
+def _fmt(profile, rec) -> tuple[str, str]:
+    """Return (stable, variable). stable is the cacheable prefix - rules +
+    device profile + track + inclusion/exclusion criteria, byte-identical
+    across every record screened against this track in this run. variable is
+    the per-record remainder (id, title, abstract) plus the trailing JSON
+    schema instructions."""
     tmpl = load_prompt(config.PROMPT_SCREEN)
+    stable_tmpl, variable_tmpl = split_stable_variable(tmpl, _STABLE_MARKER)
     inclusion, exclusion = profile.criteria_for_track(rec["track"])
     # PubMed records key on pmid; ClinicalTrials.gov registrations have no pmid,
     # so fall back to their registry_id (NCT). The screener treats either as the ID.
     record_id = rec.get("pmid") or rec.get("registry_id") or ""
-    return tmpl.format(
+    stable = stable_tmpl.format(
         device_name=profile.device_name,
         intended_purpose=profile.intended_purpose,
         track=rec["track"],
         inclusion_criteria="\n".join(f"- {c}" for c in inclusion),
         exclusion_criteria="\n".join(f"- {c}" for c in exclusion),
+    )
+    variable = variable_tmpl.format(
         pmid=record_id,
         title=rec.get("title", ""),
         abstract=rec.get("abstract", "") or "[no abstract available]",
     )
+    return stable, variable
 
 
 def screen_record(profile, rec, call=None) -> dict:
     call = call or call_json
-    user = _fmt(profile, rec)
-    result = call(config.MODEL_SCREEN, _SYSTEM, user, config.MAX_TOKENS_SCREEN)
+    stable, variable = _fmt(profile, rec)
+    result = call(config.MODEL_SCREEN, _SYSTEM, stable, variable, config.MAX_TOKENS_SCREEN)
     if result.get("_parse_error"):
         # Under-claim: unparsable -> uncertain, route to human.
         return {"verdict": "uncertain",

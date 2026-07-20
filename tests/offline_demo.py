@@ -46,7 +46,8 @@ def _pmid(u):
         if p in u: return p
     return "0"
 
-def fake_call_json(model, system, user, max_tokens):
+def fake_call_json(model, system, user_stable, user_variable, max_tokens):
+    user = user_stable + user_variable
     if "verdict" in user:
         p = _pmid(user)
         if p == "30000003":
@@ -78,13 +79,13 @@ def _appraisal(p, where):
                 "source_location": "Table 3", "source_pmid": p}],
             "not_reported": []}
 
-def fake_appraise_pdf(model, system, user, pdf_bytes, max_tokens):
+def fake_appraise_pdf(model, system, user_stable, user_variable, pdf_bytes, max_tokens):
     assert pdf_bytes[:5] == b"%PDF-"
-    return _appraisal(_pmid(user), "PDF")
+    return _appraisal(_pmid(user_stable + user_variable), "PDF")
 
-def fake_appraise_text(model, system, user, fulltext, max_tokens):
+def fake_appraise_text(model, system, user_stable, user_variable, fulltext, max_tokens):
     assert "FULL TEXT" in fulltext or len(fulltext) > 10
-    return _appraisal(_pmid(user), "PMC text")
+    return _appraisal(_pmid(user_stable + user_variable), "PMC text")
 
 def _make_pdf(lines):
     from reportlab.pdfgen import canvas
@@ -124,7 +125,7 @@ def fake_retrieve_batch(records, progress=lambda s: None):
         progress(f"  retrieve {r['pmid']}: {out[r['pmid']]['status']}")
     return out
 
-def fake_call_text(model, system, user, max_tokens):
+def fake_call_text(model, system, user_stable, user_variable, max_tokens):
     return ("## 1. Summary\nTwo device-specific studies appraised.\n\n"
             "## 2. Device-specific clinical evidence (Track 1)\n"
             "Healing 78% vs 56% (PMID 30000001, Table 2). Infection 6 (PMID 30000001, Table 3).\n\n"

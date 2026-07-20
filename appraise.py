@@ -19,35 +19,49 @@ from __future__ import annotations
 
 import config
 import db
-from llm import load_prompt, call_json_pdf, call_json_fulltext_text
+from llm import load_prompt, call_json_pdf, call_json_fulltext_text, split_stable_variable
 
 _SYSTEM = ("You output only valid JSON. No markdown, no preamble. "
            "Unknown stays unknown. You describe and appraise; you never conclude "
            "on safety, efficacy, equivalence, or compliance.")
 
+# Stable prefix ends right before the first per-paper PMID citation embedded
+# in the HARD RULES section ("traceable to this source (PMID {pmid})") -
+# everything before that is identical across every appraisal call in a run
+# (Block 5X). pmid/title/device_name/intended_purpose all appear later
+# (SOURCE header, IDENTITY CHECK, JSON schema), so the variable half still
+# needs all four formatted in.
+_STABLE_MARKER = "\n- Every extracted value is traceable to this source"
 
-def _fmt(profile, rec) -> str:
+
+def _fmt(profile, rec) -> tuple[str, str]:
+    """Return (stable, variable). stable is the cacheable prefix (intro +
+    WHAT MEDDEV A6 REQUIRES + the first HARD RULES bullet - no per-paper
+    text). variable is everything from the PMID-citation rule onward,
+    formatted with this paper's identifiers."""
     tmpl = load_prompt(config.PROMPT_APPRAISE)
-    return tmpl.format(
+    stable_tmpl, variable_tmpl = split_stable_variable(tmpl, _STABLE_MARKER)
+    variable = variable_tmpl.format(
         pmid=rec["pmid"],
         title=rec.get("title", ""),
         device_name=profile.device_name,
         intended_purpose=profile.intended_purpose,
     )
+    return stable_tmpl, variable
 
 
 def appraise_pdf(profile, rec, pdf_bytes, call=None):
     call = call or call_json_pdf
-    user = _fmt(profile, rec)
-    result = call(config.MODEL_APPRAISE, _SYSTEM, user, pdf_bytes,
+    stable, variable = _fmt(profile, rec)
+    result = call(config.MODEL_APPRAISE, _SYSTEM, stable, variable, pdf_bytes,
                   config.MAX_TOKENS_APPRAISE)
     return _finish(rec, result)
 
 
 def appraise_text(profile, rec, fulltext, call=None):
     call = call or call_json_fulltext_text
-    user = _fmt(profile, rec)
-    result = call(config.MODEL_APPRAISE, _SYSTEM, user, fulltext,
+    stable, variable = _fmt(profile, rec)
+    result = call(config.MODEL_APPRAISE, _SYSTEM, stable, variable, fulltext,
                   config.MAX_TOKENS_APPRAISE)
     return _finish(rec, result)
 

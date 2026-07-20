@@ -54,8 +54,27 @@ def _strip_fences(text: str) -> str:
     return t.strip()
 
 
-def call_text(model: str, system: str, user: str, max_tokens: int) -> str:
-    """Call Claude and return raw text (used for Markdown drafting)."""
+def _cacheable_blocks(stable: str, variable: str) -> list[dict]:
+    """Build a user-content block list with a cache_control breakpoint at the
+    end of the stable prefix. `stable` must be byte-identical across every
+    call meant to share this cache entry; `variable` is the per-call
+    remainder and is never cached. If the prefix is shorter than the model's
+    minimum cacheable length, the breakpoint is a harmless no-op (the API
+    just doesn't cache it - no error, no extra cost)."""
+    blocks = []
+    if stable:
+        blocks.append({"type": "text", "text": stable,
+                       "cache_control": {"type": "ephemeral"}})
+    blocks.append({"type": "text", "text": variable})
+    return blocks
+
+
+def call_text(model: str, system: str, user_stable: str, user_variable: str,
+              max_tokens: int) -> str:
+    """Call Claude and return raw text (used for Markdown drafting).
+
+    user_stable: the cacheable prefix (identical across calls that share it).
+    user_variable: the per-call remainder, sent uncached after it."""
     if _client is None:
         raise RuntimeError(
             "Anthropic client not configured. Set ANTHROPIC_API_KEY and "
@@ -65,13 +84,17 @@ def call_text(model: str, system: str, user: str, max_tokens: int) -> str:
         model=model,
         max_tokens=max_tokens,
         system=system,
-        messages=[{"role": "user", "content": user}],
+        messages=[{"role": "user", "content": _cacheable_blocks(user_stable, user_variable)}],
     )
     return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
 
 
-def call_json(model: str, system: str, user: str, max_tokens: int) -> dict:
-    """Call Claude, expect a single JSON object, parse it. Fails safe."""
+def call_json(model: str, system: str, user_stable: str, user_variable: str,
+             max_tokens: int) -> dict:
+    """Call Claude, expect a single JSON object, parse it. Fails safe.
+
+    user_stable: the cacheable prefix (identical across calls that share it).
+    user_variable: the per-call remainder, sent uncached after it."""
     if _client is None:
         raise RuntimeError(
             "Anthropic client not configured. Set ANTHROPIC_API_KEY and "
@@ -81,7 +104,7 @@ def call_json(model: str, system: str, user: str, max_tokens: int) -> dict:
         model=model,
         max_tokens=max_tokens,
         system=system,
-        messages=[{"role": "user", "content": user}],
+        messages=[{"role": "user", "content": _cacheable_blocks(user_stable, user_variable)}],
     )
     text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
     try:
@@ -91,10 +114,14 @@ def call_json(model: str, system: str, user: str, max_tokens: int) -> dict:
         return {"_parse_error": True, "raw": text[:2000]}
 
 
-def call_json_pdf(model: str, system: str, user: str, pdf_bytes: bytes,
-                  max_tokens: int) -> dict:
+def call_json_pdf(model: str, system: str, user_stable: str, user_variable: str,
+                  pdf_bytes: bytes, max_tokens: int) -> dict:
     """Call Claude with a PDF sent NATIVELY as a document block (preserves tables
     and layout - where adverse-event/performance data lives). Expects JSON back.
+
+    user_stable: the cacheable prefix, sent BEFORE the PDF so it stays a valid
+    cache prefix (the PDF itself is unique per paper and is never cached).
+    user_variable: the per-paper remainder, sent after the PDF.
 
     Used for full-text appraisal. Fails safe to a parse-error object.
     """
@@ -104,20 +131,20 @@ def call_json_pdf(model: str, system: str, user: str, pdf_bytes: bytes,
             "`pip install anthropic`. (Offline tests should mock this function.)"
         )
     b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+    content = []
+    if user_stable:
+        content.append({"type": "text", "text": user_stable,
+                        "cache_control": {"type": "ephemeral"}})
+    content.append({"type": "document",
+                    "source": {"type": "base64",
+                               "media_type": "application/pdf",
+                               "data": b64}})
+    content.append({"type": "text", "text": user_variable})
     resp = _client.with_options(max_retries=config.APPRAISE_MAX_RETRIES).messages.create(
         model=model,
         max_tokens=max_tokens,
         system=system,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "document",
-                 "source": {"type": "base64",
-                            "media_type": "application/pdf",
-                            "data": b64}},
-                {"type": "text", "text": user},
-            ],
-        }],
+        messages=[{"role": "user", "content": content}],
         timeout=config.APPRAISE_TIMEOUT_S,
     )
     text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
@@ -127,20 +154,21 @@ def call_json_pdf(model: str, system: str, user: str, pdf_bytes: bytes,
         return {"_parse_error": True, "raw": text[:2000]}
 
 
-def call_json_fulltext_text(model: str, system: str, user: str, fulltext: str,
-                            max_tokens: int) -> dict:
+def call_json_fulltext_text(model: str, system: str, user_stable: str, user_variable: str,
+                            fulltext: str, max_tokens: int) -> dict:
     """Appraise full text supplied as PLAIN TEXT / XML-flattened (e.g. PMC open
-    access). The article body is embedded in the user message. Expects JSON back.
+    access). The article body is embedded after user_variable, so it never
+    enters the cached prefix (it's unique per paper). Expects JSON back.
     Fails safe to a parse-error object."""
     if _client is None:
         raise RuntimeError(
             "Anthropic client not configured. Set ANTHROPIC_API_KEY and "
             "`pip install anthropic`. (Offline tests should mock this function.)"
         )
-    composed = f"{user}\n\n--- FULL TEXT (open access) ---\n{fulltext}"
+    composed_variable = f"{user_variable}\n\n--- FULL TEXT (open access) ---\n{fulltext}"
     resp = _client.with_options(max_retries=config.APPRAISE_MAX_RETRIES).messages.create(
         model=model, max_tokens=max_tokens, system=system,
-        messages=[{"role": "user", "content": composed}],
+        messages=[{"role": "user", "content": _cacheable_blocks(user_stable, composed_variable)}],
         timeout=config.APPRAISE_TIMEOUT_S,
     )
     text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
