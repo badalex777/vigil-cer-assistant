@@ -31,6 +31,19 @@ def load_prompt(path: str) -> str:
         return f.read()
 
 
+def split_stable_variable(tmpl: str, marker: str) -> tuple[str, str]:
+    """Split a loaded prompt template into a stable (cacheable) prefix and a
+    variable suffix, at the first occurrence of `marker` (the marker itself
+    stays in the variable half). Used to build Anthropic prompt-caching
+    breakpoints without touching prompt wording - the template file is read
+    unmodified; only how it's sliced into blocks changes.
+
+    Raises ValueError if `marker` is not found, so a future prompt edit that
+    removes the marker fails loudly instead of silently caching nothing."""
+    idx = tmpl.index(marker)
+    return tmpl[:idx], tmpl[idx:]
+
+
 def _strip_fences(text: str) -> str:
     t = text.strip()
     if t.startswith("```"):

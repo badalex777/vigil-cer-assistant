@@ -22,11 +22,11 @@ ABSOLUTE RULES
 
 DEVICE: {device_name} - {intended_purpose}
 
-SECTION TO WRITE: {section_title}
-{section_instructions}
-
 APPRAISED EVIDENCE AVAILABLE (JSON; each item is one fully appraised
 full-text study - MEDDEV Appendix A6 appraisal + extraction)
 {context_json}
+
+SECTION TO WRITE: {section_title}
+{section_instructions}
 
 Write the section now.

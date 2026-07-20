@@ -200,6 +200,40 @@ _SECTION_INSTRUCTIONS = {
 _NO_EVIDENCE_NOTE = ("*No fully appraised full-text evidence is available yet "
                      "for this section.*")
 
+# Records found by both search tracks are tagged "both" (pubmed.dedup) and are
+# treated as device evidence, matching DeviceProfile.criteria_for_track's
+# existing convention (a paper appearing in both tracks is considered device
+# evidence, screened against Track 1 criteria).
+_DEVICE_SPECIFIC_TRACKS = {"device_specific", "both"}
+
+# Split points in the reordered template (Block 5X): device fields are stable
+# across all 5 narrative calls; the evidence JSON (after scoping, below) is
+# stable across calls that share the same track scope (evidence_summary,
+# performance, and safety all draw on the same device-specific set);
+# section_title/section_instructions vary on every call and stay uncached.
+_EVIDENCE_MARKER = "\nAPPRAISED EVIDENCE AVAILABLE"
+_SECTION_MARKER = "\nSECTION TO WRITE:"
+
+
+def _scope_for_section(section_key: str, appraised: list[dict]) -> list[dict]:
+    """Filter appraised records to the track(s) this section is allowed to
+    cite (Block 5X - fixes a real gap between prompt and code).
+
+    The prompt has always said "use only the track relevant to this
+    section," but the caller was sending every appraised record to every
+    section regardless of track and trusting the model to self-filter -
+    concretely, `state_of_art` was receiving Track 1 (device-specific) data
+    it must never reference (MEDDEV/MDCG require the two kept separate).
+    This scopes the evidence in code instead of relying on the model.
+
+    'summary' is a whole-run overview and intentionally still sees
+    everything."""
+    if section_key == "state_of_art":
+        return [r for r in appraised if r.get("track") == "state_of_art"]
+    if section_key in ("evidence_summary", "performance", "safety"):
+        return [r for r in appraised if r.get("track") in _DEVICE_SPECIFIC_TRACKS]
+    return appraised  # "summary"
+
 
 def _record_payload(r: dict) -> dict:
     """Compact, LLM-ready view of one appraised record: identity + parsed
@@ -225,12 +259,17 @@ def make_narrative_fn(call=None):
 
     `call` is a text-returning callable (model, system, user, max_tokens) -> str.
     Defaults to llm.call_text; tests inject a stub so this runs offline."""
-    from llm import call_text
+    from llm import call_text, split_stable_variable
     call = call or call_text
+
+    tmpl = load_prompt(config.PROMPT_CER_NARRATIVE)
+    device_tmpl, _tail = split_stable_variable(tmpl, _EVIDENCE_MARKER)
+    evidence_tmpl, section_tmpl = split_stable_variable(_tail, _SECTION_MARKER)
 
     def narrative_fn(section_key, context):
         appraised = context.get("appraised") or []
-        payload = [_record_payload(r) for r in appraised]
+        scoped = _scope_for_section(section_key, appraised)
+        payload = [_record_payload(r) for r in scoped]
         if not payload:
             return _NO_EVIDENCE_NOTE
         profile = context.get("profile")
@@ -239,13 +278,22 @@ def make_narrative_fn(call=None):
             instructions = instructions.format(
                 condition=context.get("condition", ""),
                 technology=context.get("technology", ""))
-        tmpl = load_prompt(config.PROMPT_CER_NARRATIVE)
-        user = tmpl.format(
-            device_name=getattr(profile, "device_name", "") if profile else "",
-            intended_purpose=getattr(profile, "intended_purpose", "") if profile else "",
-            section_title=_SECTION_TITLES.get(section_key, section_key),
-            section_instructions=instructions,
-            context_json=json.dumps(payload, indent=2),
+
+        # Device fields + the (now track-scoped) evidence JSON come first,
+        # section title/instructions last - the byte order a future
+        # cache_control breakpoint needs (the evidence JSON is identical
+        # across every call that shares this section's track scope; the
+        # trailing section text varies on every call). No breakpoint is set
+        # here yet - just the ordering (Block 5X).
+        user = (
+            device_tmpl.format(
+                device_name=getattr(profile, "device_name", "") if profile else "",
+                intended_purpose=getattr(profile, "intended_purpose", "") if profile else "")
+            + evidence_tmpl.format(context_json=json.dumps(payload, indent=2))
+            + section_tmpl.format(
+                section_title=_SECTION_TITLES.get(section_key, section_key),
+                section_instructions=instructions,
+            )
         )
         return call(config.MODEL_DRAFT, _SYSTEM, user, config.MAX_TOKENS_DRAFT)
 
