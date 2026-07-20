@@ -67,6 +67,8 @@ ss.setdefault("_cep_docx_bytes", None)   # cached CEP Word render (avoids per-re
 ss.setdefault("_docs_cache", None)       # cached step-6 doc set (built list + zip bytes)
 ss.setdefault("_phase_b_thread", None)   # background thread for Phase B appraisal
 ss.setdefault("_phase_b_result", None)   # shared result dict written by the thread
+ss.setdefault("_docs_thread", None)      # background thread for step-6 document build
+ss.setdefault("_docs_result", None)      # shared result dict written by the thread
 
 # SAFETY: the default must be the CHEAP path, never comprehensive. If the env var is
 # missing we cap at 250/track - a missing variable must never trigger a $20 run.
@@ -127,6 +129,77 @@ def _run_phase_b_bg(profile, run_id, uploads, db_path, duplicates, queries,
         # else: another invocation already claimed appraisal for this run
         # (e.g. a duplicate Streamlit rerun) - back off without calling
         # run_fulltext_appraisal again; it bills a real LLM call per paper.
+    except Exception as e:
+        result["error"] = str(e)
+    finally:
+        result["done"] = True
+
+
+def _run_docs_bg(profile, run_id, scope_hash, counts, search_meta, cep_md,
+                 queries, ris_sources, result):
+    """Build the 6-document set (5 Word docs + audit-trail CSV + zip) in a
+    background thread, mirroring _run_phase_a_bg / _run_phase_b_bg.
+
+    generate_cer_md's narrative_fn fires one Opus call per CER section (5
+    total) and alone can take 1-2 minutes - running that inline on the main
+    script thread (as this used to) left step 6 with no spinner and no
+    buttons for that whole span, since it happened BEFORE the
+    "Building Word documents..." spinner even started. Writes output or
+    error into the shared result dict; the main thread's fragment polls it.
+    """
+    try:
+        db_path = config.DB_PATH
+        records = db.retrieval_list(db_path, run_id)
+        appraised = [r for r in records if r.get("appraisal_status") == "complete"]
+        incomplete = [r for r in records if r.get("appraisal_status") == "appraisal_incomplete"]
+
+        from prisma import PrismaCounts
+        if hasattr(counts, "as_dict"):
+            pc = counts
+        else:
+            pc = PrismaCounts(**{k: counts.get(k, 0) for k in [
+                "db_records", "register_records", "duplicates_removed", "screened",
+                "excluded_screening", "reports_sought", "reports_not_retrieved",
+                "assessed", "excluded_eligibility", "included"]})
+
+        cep = cep_md or outputs.generate_cep_md(profile, run_id, queries, scope_hash)
+        sp = outputs.generate_search_protocol_md(
+            profile, run_id, queries, scope_hash, ris_sources=ris_sources)
+        sr = outputs.generate_search_report_md(profile, run_id, pc, search_meta,
+                                               scope_hash=scope_hash)
+        tm = outputs.generate_traceability_matrix_md(profile, run_id, records,
+                                                     scope_hash=scope_hash)
+        log_rows = db.get_run_log(db_path, run_id) if hasattr(db, "get_run_log") else []
+        state_row = db.get_run_state(db_path, run_id)
+        audit = outputs.generate_audit_trail_csv(log_rows, state_row)
+        cer = outputs.generate_cer_md(profile, run_id, appraised, incomplete,
+                                      pms_signals=[], counts=pc, scope_hash=scope_hash,
+                                      narrative_fn=draft.make_narrative_fn())
+
+        # 5 narrative documents -> Word (.docx); audit trail stays CSV (data export)
+        import docx_export
+        docx_mime = ("application/vnd.openxmlformats-officedocument."
+                    "wordprocessingml.document")
+        word_docs = [
+            ("01_Clinical_Evaluation_Plan.docx", cep, "Clinical Evaluation Plan"),
+            ("02_Literature_Search_Protocol.docx", sp, "Literature Search Protocol"),
+            ("03_Literature_Search_Report.docx", sr, "Literature Search Report"),
+            ("04_CER_First_Draft.docx", cer, "CER First Draft"),
+            ("05_Evidence_Traceability_Matrix.docx", tm, "Evidence Traceability Matrix"),
+        ]
+
+        built = []
+        for fname, md, title in word_docs:
+            data = docx_export.md_to_docx_bytes(md, title)
+            built.append((fname, data, docx_mime))
+        built.append(("06_Audit_Trail.csv", audit.encode("utf-8"), "text/csv"))
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for fname, data, _ in built:
+                z.writestr(fname, data)
+
+        result["output"] = {"built": built, "zip": buf.getvalue()}
     except Exception as e:
         result["error"] = str(e)
     finally:
@@ -229,6 +302,24 @@ def _phase_b_progress_fragment():
                unsafe_allow_html=True)
 
 
+@st.fragment(run_every=2)
+def _docs_progress_fragment():
+    """Runs every 2 seconds independently, mirrors _phase_b_progress_fragment.
+    Document build has no natural per-item counter (unlike Phase B's per-paper
+    appraisal), so this shows one static status line and just watches for
+    completion. When the thread finishes, triggers a full app rerun to show
+    the download buttons."""
+    result = ss._docs_result or {}
+    thread = ss._docs_thread
+
+    if result.get("done") or (thread is not None and not thread.is_alive()):
+        st.rerun(scope="app")
+        return
+
+    st.markdown('<div class="livestatus">Drafting the CER narrative and '
+               'assembling the document set...</div>', unsafe_allow_html=True)
+
+
 def goto(step):
     ss.step = step
 
@@ -257,7 +348,16 @@ def _friendly_model_name(model_id: str) -> str:
 def _friendly_retrieval_row(r) -> str:
     """Map a record's internal retrieval_source / appraisal_status codes to a
     plain-English summary line - the Phase B read-only list must read like a
-    PRRC summary, not leaked debug output."""
+    PRRC summary, not leaked debug output.
+
+    Returns an HTML fragment (not Markdown) wrapped in the .recordrow class -
+    plain `st.markdown("- **x** - y")` with no class inherits Streamlit's own
+    theme-driven text color instead of ui_theme's ink, which renders as
+    white-on-white whenever the browser's light/dark preference resolves to
+    Streamlit's dark theme (this app pins no [theme] in .streamlit/config.toml,
+    so that's client-side, not something the server controls). Every other
+    piece of body copy in the app is wrapped in an explicit class for the same
+    reason (.muted, .sectionnote, etc.) - this was the one spot left bare."""
     is_trial = r.get("entry_type") == "trial_registration"
     rid = r.get("pmid") or r.get("registry_id") or r.get("external_id") or "-"
     label = rid if is_trial else f"PMID {rid}"
@@ -273,7 +373,7 @@ def _friendly_retrieval_row(r) -> str:
         desc = "Awaiting full text (no open-access copy)"
     else:
         desc = "Not yet appraised"
-    return f"- **{label}** - {desc}"
+    return f'<div class="recordrow">- <b>{label}</b> - {desc}</div>'
 
 
 # =============================================================================
@@ -804,7 +904,8 @@ def _show_orphaned_run_ui():
                   "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
                   "_phase_a_thread", "_phase_a_result", "n_equivalents",
                   "_cep_docx_bytes", "_docs_cache",
-                  "_phase_b_thread", "_phase_b_result"]:
+                  "_phase_b_thread", "_phase_b_result",
+                  "_docs_thread", "_docs_result"]:
             ss.pop(k, None)
         st.rerun()
 
@@ -905,9 +1006,10 @@ def step_phase_b():
                     'this run. Read-only summary below - to change anything, start '
                     'a new evaluation.</span>', unsafe_allow_html=True)
         records = db.retrieval_list(config.DB_PATH, ss.run_id)
-        st.write(f"{len(records)} included record(s):")
+        st.markdown(f'<div class="recordrow"><b>{len(records)} included record(s):</b></div>',
+                   unsafe_allow_html=True)
         for r in records:
-            st.markdown(_friendly_retrieval_row(r))
+            st.markdown(_friendly_retrieval_row(r), unsafe_allow_html=True)
         return
 
     out = ss.phase_a
@@ -991,63 +1093,57 @@ def step_documents():
     run_id, scope_hash = ss.run_id, ss.scope_hash
     ui_theme.disclaimer()
 
-    DOCX_MIME = ("application/vnd.openxmlformats-officedocument."
-                 "wordprocessingml.document")
-
     if ss._docs_cache is None:
-        counts = out["counts"]
+        thread = ss._docs_thread
+        result = ss._docs_result
+
+        if thread is not None:
+            if not thread.is_alive():
+                # Thread just finished - collect the result on this run.
+                if result and result.get("error"):
+                    _show_orphaned_run_ui()
+                    return
+                if result and result.get("done") and result.get("output") is not None:
+                    ss._docs_cache = result["output"]
+                    ss._docs_thread = None
+                    ss._docs_result = None
+                    st.rerun()
+                    return
+
+            # Thread alive (or just finished but output not yet copied): show
+            # loading. The card renders ONCE here (mirrors step_phase_b); the
+            # fragment below re-runs every 2s to swap the live status line
+            # without touching the rest of the page. The user must never see
+            # this step with no buttons and no explanation of why.
+            load_box = st.empty()
+            ui_theme.loading_card(
+                load_box, "Building documents",
+                "Drafting the CER narrative and assembling the 6-document "
+                "set - this can take a couple of minutes.")
+            _docs_progress_fragment()
+            return
+
+        # No thread yet, no cache yet: kick off the background build. Doc
+        # generation calls generate_cer_md, which fires 5 Opus calls for the
+        # narrative sections and can run 1-2 minutes - building it inline on
+        # this script run (as this used to) left step 6 blank (just the
+        # header/disclaimer above) with no spinner for that whole span, since
+        # it happened before the "Building Word documents..." spinner even
+        # started. Capture everything the background thread needs from
+        # session state now - a bg thread must never touch `ss` itself.
         search_meta = ss.phase_a.get("search_meta", {}) if ss.phase_a else {}
-        records = db.retrieval_list(config.DB_PATH, run_id)
-        appraised = [r for r in records if r.get("appraisal_status") == "complete"]
-        incomplete = [r for r in records if r.get("appraisal_status") == "appraisal_incomplete"]
-
-        from prisma import PrismaCounts
-        if hasattr(counts, "as_dict"):
-            pc = counts
-        else:
-            pc = PrismaCounts(**{k: counts.get(k, 0) for k in [
-                "db_records", "register_records", "duplicates_removed", "screened",
-                "excluded_screening", "reports_sought", "reports_not_retrieved",
-                "assessed", "excluded_eligibility", "included"]})
-
-        cep = ss.cep_md or outputs.generate_cep_md(profile, run_id, ss.queries, scope_hash)
-        sp = outputs.generate_search_protocol_md(
-            profile, run_id, ss.queries, scope_hash,
-            ris_sources=[u["source"] for u in ss.ris_uploads] or None)
-        sr = outputs.generate_search_report_md(profile, run_id, pc, search_meta,
-                                               scope_hash=scope_hash)
-        tm = outputs.generate_traceability_matrix_md(profile, run_id, records,
-                                                     scope_hash=scope_hash)
-        log_rows = db.get_run_log(config.DB_PATH, run_id) if hasattr(db, "get_run_log") else []
-        state_row = db.get_run_state(config.DB_PATH, run_id)
-        audit = outputs.generate_audit_trail_csv(log_rows, state_row)
-        cer = outputs.generate_cer_md(profile, run_id, appraised, incomplete,
-                                      pms_signals=[], counts=pc, scope_hash=scope_hash,
-                                      narrative_fn=draft.make_narrative_fn())
-
-        # 5 narrative documents -> Word (.docx); audit trail stays CSV (data export)
-        import docx_export
-        word_docs = [
-            ("01_Clinical_Evaluation_Plan.docx", cep, "Clinical Evaluation Plan"),
-            ("02_Literature_Search_Protocol.docx", sp, "Literature Search Protocol"),
-            ("03_Literature_Search_Report.docx", sr, "Literature Search Report"),
-            ("04_CER_First_Draft.docx", cer, "CER First Draft"),
-            ("05_Evidence_Traceability_Matrix.docx", tm, "Evidence Traceability Matrix"),
-        ]
-
-        built = []
-        with st.spinner("Building Word documents..."):
-            for fname, md, title in word_docs:
-                data = docx_export.md_to_docx_bytes(md, title)
-                built.append((fname, data, DOCX_MIME))
-        built.append(("06_Audit_Trail.csv", audit.encode("utf-8"), "text/csv"))
-
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            for fname, data, _ in built:
-                z.writestr(fname, data)
-
-        ss._docs_cache = {"built": built, "zip": buf.getvalue()}
+        ris_sources = [u["source"] for u in ss.ris_uploads] or None
+        result = {"done": False, "output": None, "error": None}
+        ss._docs_result = result
+        t = threading.Thread(
+            target=_run_docs_bg,
+            args=(profile, run_id, scope_hash, out["counts"], search_meta,
+                  ss.cep_md, ss.queries, ris_sources, result),
+            daemon=True)
+        t.start()
+        ss._docs_thread = t
+        st.rerun()
+        return
 
     st.markdown('<span class="muted">Six audit-ready documents, each carrying the same '
                 'control block (run, scope hash, version) tying them to this immutable '
@@ -1066,7 +1162,8 @@ def step_documents():
         for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
                   "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
                   "_phase_a_thread", "_phase_a_result", "_cep_docx_bytes",
-                  "_docs_cache", "_phase_b_thread", "_phase_b_result"]:
+                  "_docs_cache", "_phase_b_thread", "_phase_b_result",
+                  "_docs_thread", "_docs_result"]:
             ss.pop(k, None)
         st.rerun()
 

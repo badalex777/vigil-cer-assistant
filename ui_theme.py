@@ -224,6 +224,15 @@ small, .muted { color: %(slate)s; }
   width: 100%%; text-align: center; margin: 0.4rem 0 1rem 0;
   color: %(navy)s; font-size: 0.9rem; font-weight: 600;
 }
+/* record-summary rows (Phase B read-only list) - plain st.write/st.markdown
+   with no class here would inherit Streamlit's own theme-driven text color
+   instead of ui_theme's ink, and render invisible on the light canvas
+   whenever the browser resolves Streamlit's auto light/dark to dark (no
+   [theme] is pinned in .streamlit/config.toml, so that's client-side).
+   Every other piece of body copy in the app carries an explicit class for
+   the same reason - this class closes that gap for the record list. */
+.recordrow { color: %(ink)s; font-size: 0.92rem; margin: 0.15rem 0; }
+.recordrow b { color: %(ink)s; }
 code { color: %(brown)s; background: #F2EFEA; }
 </style>
 """ % {"canvas": CANVAS, "ink": INK, "navy": NAVY, "brown": BROWN,
