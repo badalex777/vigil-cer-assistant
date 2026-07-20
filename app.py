@@ -65,9 +65,8 @@ ss.setdefault("_phase_a_thread", None)   # background thread for Phase A
 ss.setdefault("_phase_a_result", None)   # shared result dict written by the thread
 ss.setdefault("_cep_docx_bytes", None)   # cached CEP Word render (avoids per-rerun rebuild)
 ss.setdefault("_docs_cache", None)       # cached step-6 doc set (built list + zip bytes)
-ss.setdefault("appraising", False)       # True while Phase B appraisal is running synchronously
-ss.setdefault("_phase_b_uploads", None)  # PDF uploads captured just before appraisal starts
-ss.setdefault("_appraising_started", False)  # True once the spinner-only flush rerun has fired
+ss.setdefault("_phase_b_thread", None)   # background thread for Phase B appraisal
+ss.setdefault("_phase_b_result", None)   # shared result dict written by the thread
 
 # SAFETY: the default must be the CHEAP path, never comprehensive. If the env var is
 # missing we cap at 250/track - a missing variable must never trigger a $20 run.
@@ -96,6 +95,38 @@ def _run_phase_a_bg(profile, run_id, db_path, retmax, ris_uploads, result):
                 for r in u["records"]:
                     db.upsert_record(db_path, run_id, r)
         result["output"] = out
+    except Exception as e:
+        result["error"] = str(e)
+    finally:
+        result["done"] = True
+
+
+def _run_phase_b_bg(profile, run_id, uploads, db_path, duplicates, queries,
+                     verified_retrieval, result):
+    """Run Phase B full-text appraisal in a background thread, independent of
+    Streamlit's execution - mirrors _run_phase_a_bg. Writes output or error into
+    the shared result dict when done; the main thread polls result['done'] via
+    session state to know when to read the output.
+
+    Blocking work must never run inline in the main script thread across a
+    chain of st.rerun() calls: Streamlit only flushes/clears a prior run's
+    stale widgets once a run finishes WITHOUT itself calling st.rerun() (see
+    FINISHED_EARLY_FOR_RERUN vs FINISHED_SUCCESSFULLY in
+    streamlit/runtime/scriptrunner/script_runner.py) - a rerun-chained blocking
+    call leaves old widgets on screen, dimmed, for the whole wait.
+    """
+    try:
+        if db.claim_appraisal(db_path, run_id):
+            out = pipeline.run_fulltext_appraisal(
+                profile, run_id, uploads, db_path=db_path,
+                duplicates=duplicates, queries=queries,
+                verified_retrieval=verified_retrieval,
+                progress=lambda s: None)
+            db.mark_complete(db_path, run_id, actor=profile.evaluator_name or "PRRC")
+            result["output"] = out
+        # else: another invocation already claimed appraisal for this run
+        # (e.g. a duplicate Streamlit rerun) - back off without calling
+        # run_fulltext_appraisal again; it bills a real LLM call per paper.
     except Exception as e:
         result["error"] = str(e)
     finally:
@@ -176,6 +207,26 @@ def _phase_a_progress_fragment():
     # Rendered here in the fragment so exactly one message is ever on screen.
     msg = result.get("progress", {}).get("msg", "Starting...")
     st.markdown(f'<div class="livestatus">{msg}</div>', unsafe_allow_html=True)
+
+
+@st.fragment(run_every=2)
+def _phase_b_progress_fragment():
+    """Runs every 2 seconds independently - ONLY this block re-executes, mirrors
+    _phase_a_progress_fragment. When the thread finishes, triggers a full app
+    rerun to show the summary."""
+    result = ss._phase_b_result or {}
+    thread = ss._phase_b_thread
+
+    # Thread done? Trigger full app rerun so step_phase_b transitions onward.
+    if result.get("done") or (thread is not None and not thread.is_alive()):
+        st.rerun(scope="app")
+        return
+
+    records = db.retrieval_list(config.DB_PATH, ss.run_id)
+    total = len(records)
+    done = len([r for r in records if r.get("appraisal_status") == "complete"])
+    st.markdown(f'<div class="livestatus">Appraised {done} of {total}.</div>',
+               unsafe_allow_html=True)
 
 
 def goto(step):
@@ -752,8 +803,8 @@ def _show_orphaned_run_ui():
         for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
                   "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
                   "_phase_a_thread", "_phase_a_result", "n_equivalents",
-                  "_cep_docx_bytes", "_docs_cache", "appraising",
-                  "_phase_b_uploads", "_appraising_started"]:
+                  "_cep_docx_bytes", "_docs_cache",
+                  "_phase_b_thread", "_phase_b_result"]:
             ss.pop(k, None)
         st.rerun()
 
@@ -861,51 +912,35 @@ def step_phase_b():
 
     out = ss.phase_a
 
-    if ss.appraising:
-        # Clean screen only: no uploaders, no button underneath the spinner.
-        records = db.retrieval_list(config.DB_PATH, ss.run_id)
-        total = len(records)
-        done = len([r for r in records if r.get("appraisal_status") == "complete"])
+    thread = ss._phase_b_thread
+    result = ss._phase_b_result
+
+    if thread is not None:
+        if not thread.is_alive():
+            # Thread just finished - collect the result on this run.
+            if result and result.get("error"):
+                _show_orphaned_run_ui()
+                return
+            if result and result.get("done") and result.get("output") is not None:
+                ss.phase_b = result["output"]
+                ss._phase_b_thread = None
+                ss._phase_b_result = None
+                goto(5)
+                st.rerun()
+                return
+
+        # Thread alive (or just finished but output not yet copied): show
+        # loading. The card renders ONCE here (this run then returns normally,
+        # letting the frontend settle cleanly and drop the uploaders/button
+        # from the run before this one); the fragment below re-runs every 2s
+        # to swap the live "Appraised N of M" line without touching the rest
+        # of the page.
         model_label = _friendly_model_name(config.MODEL_APPRAISE)
         load_box = st.empty()
         ui_theme.loading_card(
             load_box, "Appraising",
-            f"Appraising full texts with {model_label} - this can take a few "
-            f"minutes. Appraised {done} of {total}.")
-
-        if not ss._appraising_started:
-            # The appraisal call below is a long, blocking one. Streamlit only
-            # finalizes removal of the previous run's elements (the uploaders
-            # and button) once THIS script run completes - so if the blocking
-            # call started immediately, those old widgets would sit on screen,
-            # dimmed, for the whole wait. Instead, end this run right after
-            # drawing the spinner: that run completes in an instant, so the
-            # frontend fully swaps in the clean spinner screen before the slow
-            # call ever starts.
-            ss._appraising_started = True
-            st.rerun()
-            return
-
-        try:
-            if db.claim_appraisal(config.DB_PATH, ss.run_id):
-                pb = pipeline.run_fulltext_appraisal(
-                    profile, ss.run_id, ss._phase_b_uploads or {}, db_path=config.DB_PATH,
-                    duplicates=out.get("_duplicates", 0), queries=ss.queries,
-                    verified_retrieval=out.get("verified_retrieval", {}),
-                    progress=lambda s: None)
-                ss.phase_b = pb
-                db.mark_complete(config.DB_PATH, ss.run_id,
-                                 actor=profile.evaluator_name or "PRRC")
-            # else: another invocation already claimed appraisal for this run
-            # (e.g. a duplicate Streamlit rerun) - back off without calling
-            # run_fulltext_appraisal again; it bills a real LLM call per paper.
-        finally:
-            load_box.empty()
-            ss.appraising = False
-            ss._appraising_started = False
-            ss._phase_b_uploads = None
-        goto(5)
-        st.rerun()
+            f"Appraising full texts with {model_label} - this can take a few minutes.")
+        _phase_b_progress_fragment()
         return
 
     manual = out["manual_upload_list"]
@@ -933,8 +968,16 @@ def step_phase_b():
     label = "Run full-text appraisal & build documents" if manual else \
             "Build the document set"
     if st.button(label):
-        ss._phase_b_uploads = uploads
-        ss.appraising = True
+        result = {"done": False, "output": None, "error": None}
+        ss._phase_b_result = result
+        t = threading.Thread(
+            target=_run_phase_b_bg,
+            args=(profile, ss.run_id, uploads, config.DB_PATH,
+                  out.get("_duplicates", 0), ss.queries,
+                  out.get("verified_retrieval", {}), result),
+            daemon=True)
+        t.start()
+        ss._phase_b_thread = t
         st.rerun()
 
 
@@ -1023,8 +1066,7 @@ def step_documents():
         for k in ["step", "profile_dict", "queries", "counts_preview", "run_id",
                   "scope_hash", "phase_a", "phase_b", "cep_md", "ris_uploads",
                   "_phase_a_thread", "_phase_a_result", "_cep_docx_bytes",
-                  "_docs_cache", "appraising", "_phase_b_uploads",
-                  "_appraising_started"]:
+                  "_docs_cache", "_phase_b_thread", "_phase_b_result"]:
             ss.pop(k, None)
         st.rerun()
 
