@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m py_compile app.py)",
+      "Bash(python3 -m py_compile ui_theme.py)",
+      "Bash(python3 -m py_compile screen.py)",
+      "Bash(python3 -m py_compile pipeline.py)",
+      "Bash(python3 -m py_compile config.py)",
+      "Bash(python3 *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(pip show *)",
+      "Bash(grep -n 'class ScriptRunner\\\\|threading.Thread\\\\|def start\\(\\\\|_script_thread\\\\|super\\(\\).__init__\\\\|Thread\\)' __CMDSUB_OUTPUT__/runtime/scriptrunner/script_runner.py)"
+    ]
+  }
+}

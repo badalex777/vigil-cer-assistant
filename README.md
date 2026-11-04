@@ -1,128 +1,203 @@
-# Vigil — CER Literature Review Assistant (prototype v0.1)
+# Vigil
 
-AI-assisted EU MDR clinical evaluation literature review. Takes a locked **Device
-Profile**, runs a **two-track PubMed search** (device-specific + state-of-the-art),
-screens abstracts, extracts adverse-event/performance data, and produces **two
-outputs**: an audit-ready **search report** (with verbatim queries + a PRISMA 2020
-flow diagram) and a **MEDDEV 2.7/1 rev 4-aligned CER first-draft section**.
+**An AI-assisted clinical evidence review prototype for medical devices.**
 
-**Acronyms:** MDR = Medical Device Regulation (EU 2017/745). CER = Clinical
-Evaluation Report. MEDDEV 2.7/1 rev 4 = the EU guidance for clinical evaluation.
-PRRC = Person Responsible for Regulatory Compliance (the qualified person who
-reviews and signs). PRISMA 2020 = systematic-review reporting standard.
+Vigil helps structure the literature-review work behind a Clinical Evaluation
+Report (CER): it turns a device profile and approved search strategy into a
+traceable search, screens and appraises evidence, and assembles a reviewable
+document set. It is built as a Python and Streamlit application.
 
-> **Guardrail:** Vigil produces a fully-cited *first draft*. Equivalence,
-> benefit/risk, residual-risk, and compliance statements are **PRRC-only
-> placeholders**. The system describes evidence; it never concludes.
+> **Prototype, not a regulatory decision-maker.** Vigil generates drafts and
+> organizes evidence. It does not determine device safety, performance,
+> equivalence, benefit-risk acceptability, or regulatory conformity. A qualified
+> clinical evaluator and the manufacturer's Person Responsible for Regulatory
+> Compliance (PRRC) must review, complete, and approve every output. This project
+> is not validated for production or for use as a standalone regulatory tool.
 
-## What's real vs. stubbed (v0.1)
+## What it does
 
-| Piece | State |
-|---|---|
-| Two-track query builder from Device Profile | ✅ real, valid E-utilities syntax |
-| PubMed esearch + efetch + dedup | ✅ real (needs NCBI network — runs on Replit, not in chat sandbox) |
-| Abstract screening (Claude Sonnet) | ✅ real |
-| Abstract-level extraction (Claude Sonnet) | ✅ real — preliminary pass, flags `appraisal_incomplete` |
-| **Auto-retrieval of open-access full text (PMC + Unpaywall)** | ✅ **real — the default; minimises manual work** (needs network → Replit) |
-| **Identity verification gate (DOI / title) before appraisal** | ✅ **real — wrong/unconfirmed docs are blocked, not appraised** |
-| **PRRC full-text upload + MEDDEV A6 appraisal (Claude Opus, PDF/text)** | ✅ **real — residual fallback for no-OA / unverified papers** |
-| PRISMA 2020 SVG from pipeline counts | ✅ real, updates between phases |
-| Search report + CER draft assembly | ✅ real, records retrieval source + verification per paper |
-| PMS Monitor write-side + shared signals table | ◐ table + CER read-path exist; PMS write-side is the next build |
-| Billing / auth / multi-tenant | ✗ out of scope by design |
+- Builds two PubMed search tracks from a structured device profile: one for
+  device-specific evidence and one for the state of the art.
+- Lets the reviewer inspect and edit search strings, preview hit counts, approve
+  the final queries, and lock the evaluation scope before searching.
+- Searches PubMed and ClinicalTrials.gov; also accepts optional RIS exports from
+  subscription databases such as Embase or Cochrane.
+- Deduplicates records across sources and screens abstracts against the
+  review's inclusion and exclusion criteria.
+- Retrieves legally open-access full text from PubMed Central (PMC) and
+  Unpaywall when available. It checks retrieved documents against DOI or title
+  information and routes unverified or unavailable documents for reviewer
+  follow-up rather than treating them as confirmed evidence.
+- Uses Anthropic Claude models for abstract screening, preliminary extraction,
+  full-text appraisal, and CER narrative drafting.
+- Tracks run state, approved queries, scope identifiers, and review events in
+  SQLite to support traceability within a run.
+- Generates PRISMA 2020 flow information and assembles a downloadable document
+  set for human review.
 
-## Identity verification (why a retrieved PDF is trusted)
+## Review workflow
 
-Before any auto-retrieved full text is appraised, Vigil confirms it is the paper
-it claims to be — a wrong document appraised as evidence for the wrong PMID is a
-silent, expensive error in a regulated CER. Two independent layers:
+1. **Define the device and review scope.** Enter device details, clinical
+   questions, criteria, and evaluator information.
+2. **Review the search strategy.** Inspect or edit the two PubMed queries and
+   preview result counts.
+3. **Approve and lock the scope.** Locking freezes the approved queries and
+   scope for the evaluation.
+4. **Search and screen.** Vigil searches the configured sources, deduplicates
+   records, screens abstracts, and performs preliminary extraction.
+5. **Retrieve and appraise full text.** Available open-access texts are checked
+   for identity; verified texts and reviewer-uploaded PDFs are sent through
+   full-text appraisal. Papers without appraised full text remain visibly
+   incomplete.
+6. **Review and download the document set.** The reviewer can download each
+   output separately or as a ZIP archive.
 
-1. **Deterministic gate (primary).** Confirm the record's **DOI** appears in the
-   document (PMC article-meta, or printed in the PDF). DOIs are unique, so a match
-   is conclusive and audit-defensible. No DOI printed → fall back to **title
-   similarity** (sequence ratio + distinctive-token overlap). For auto-retrieval
-   this is a HARD gate: `mismatch` / `uncertain` / `unverifiable` → the paper is
-   NOT appraised and drops to the manual-upload list, flagged with the reason.
-2. **LLM self-check (defense in depth).** The appraisal prompt instructs Claude to
-   refuse and flag if the document doesn't match the expected PMID/title.
-
-PRRC uploads are verified as a *soft* check: the verdict is recorded in the audit
-trail and a mismatch is surfaced, but the upload is still appraised (a human chose
-the file). The search report records, per paper, both how the full text was
-obtained (PMC / Unpaywall / upload) and how its identity was verified (DOI / title).
-
-## The workflow (this is the product)
-
-```
-PHASE A  search → screen → abstract pass
-         → AUTO-RETRIEVE full text for every included paper:
-              tier 1  PMC open access        (full text as XML/text)
-              tier 2  Unpaywall              (legal OA PDF by DOI)
-              tier 3  no OA found            → manual-upload list (residual only)
-         → VERIFY identity of each retrieved doc (DOI / title)
-              verified    → appraise
-              unverified  → manual-upload list (flagged with reason)
-         → AUTO-APPRAISE (MEDDEV A6) the verified docs
-         → outputs + a SHORT manual-upload list
-
-PHASE B  PRRC uploads PDFs for the residual (no-OA / unverified) papers only
-         → MEDDEV A6 appraisal → papers upgrade to fully appraised
-         → PRISMA + draft regenerate
+```mermaid
+flowchart LR
+    A[Device profile] --> B[Review and approve searches]
+    B --> C[PubMed + ClinicalTrials.gov]
+    B -. optional RIS exports .-> C
+    C --> D[Deduplicate and screen]
+    D --> E[Open-access retrieval]
+    E --> F[DOI/title identity check]
+    F --> G[Full-text appraisal]
+    F -. unavailable or unverified .-> H[Reviewer PDF upload]
+    H --> G
+    G --> I[PRISMA and traceable document set]
 ```
 
-The burden is inverted: at 150 papers, the PRRC uploads only the handful with no
-legal open-access copy, not all 150. Every full text is appraised the same way
-regardless of source; the search report records **how** each was obtained (PMC /
-Unpaywall / PRRC upload) for the audit trail. Vigil never circumvents a paywall —
-Unpaywall only returns links the publisher or author made openly available.
+## Generated outputs
 
-**No new dependencies:** retrieval uses the Python standard library (`urllib`).
+The document set contains:
 
-## Run on Replit
+1. Clinical Evaluation Plan (CEP)
+2. Literature Search Protocol
+3. Literature Search Report, including PRISMA flow information
+4. CER first draft
+5. Evidence Traceability Matrix
+6. Audit Trail (CSV)
 
-1. Upload this folder. In **Secrets**, set `ANTHROPIC_API_KEY` (and optionally
-   `NCBI_API_KEY`, `NCBI_EMAIL`).
-2. `pip install -r requirements.txt`
-3. `streamlit run app.py`
-4. Pick `npwt_sample.json`, click **① Run search & screening**, then upload a
-   full-text PDF for an included paper and click **③ Run full-text appraisal**.
+The five narrative documents are exported as Word files. Each carries run and
+scope information and a visible draft/reviewer disclaimer; the audit trail is
+provided as CSV. Vigil marks regulatory judgments that require human completion
+instead of presenting them as AI conclusions.
 
-## Run the offline demo (no keys, no network)
+## Technology
 
+- Python 3.10+
+- Streamlit
+- SQLite
+- Anthropic Python SDK and Claude models
+- NCBI E-utilities / PubMed
+- ClinicalTrials.gov API
+- PubMed Central and Unpaywall for open-access retrieval
+- `python-docx` for Word exports
+
+## Run locally
+
+### Requirements
+
+- Python 3.10 or newer
+- An Anthropic API key for live AI-powered review steps
+- Internet access for live PubMed, ClinicalTrials.gov, PMC, and Unpaywall requests
+
+### Install and start
+
+```bash
+git clone https://github.com/<your-username>/<your-repository>.git
+cd <your-repository>
+
+python -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+cp .env.example .env
 ```
+
+Edit `.env` and set `ANTHROPIC_API_KEY`. For NCBI and Unpaywall requests, set
+the relevant contact email variables described below. Then run:
+
+```bash
+streamlit run app.py
+```
+
+Open the local URL printed by Streamlit. The app is configured to use port 8080
+by default.
+
+Keep `.env` private. It is listed in `.gitignore`; never commit API keys or other
+credentials.
+
+## Configuration
+
+| Variable | Required | Purpose |
+|---|---:|---|
+| `ANTHROPIC_API_KEY` | Yes for AI steps | Authenticates requests to the Anthropic API. |
+| `NCBI_EMAIL` | Recommended | Contact email for NCBI E-utilities requests. |
+| `NCBI_API_KEY` | No | Optional NCBI key for a higher request rate. |
+| `UNPAYWALL_EMAIL` | Recommended for retrieval | Contact email used for Unpaywall requests; defaults to `NCBI_EMAIL`. |
+| `VIGIL_AUTO_RETRIEVAL` | No | Set to `0` to disable automatic PMC/Unpaywall retrieval. Defaults to enabled. |
+| `VIGIL_COMPREHENSIVE` | No | Set to `1` to opt into comprehensive retrieval instead of the default capped demo run. |
+| `VIGIL_DB` | No | SQLite database path. Defaults to `vigil.db`. |
+
+Additional model, retrieval, and processing limits can be adjusted through the
+`VIGIL_*` settings in `config.py`. Comprehensive searches and larger screening
+runs can increase API usage and cost; review the configuration before running
+them.
+
+## Offline demo and tests
+
+The offline pipeline demo uses canned records and stubbed AI/retrieval calls. It
+does not require API keys or live service access. It does use ReportLab to
+generate test PDFs:
+
+```bash
+python -m pip install reportlab
 python tests/offline_demo.py
 ```
-Exercises BOTH phases (search/screen + a simulated PDF upload & appraisal) with
-canned NPWT abstracts and a fake LLM. Use as a **demo fallback** if PubMed is flaky
-on a prospect call. Writes artifacts to `/tmp/vigil_*.{md,svg}`.
 
-## Swap in a different device
+The test scripts are designed to run without live API calls. To run them all:
 
-Copy `devices/npwt_sample.json`, edit the fields (all human-defined — nothing is
-AI-inferred), drop it in `devices/`. Device-specificity lives in **data, not code**.
-
-## Files
-
-```
-config.py            model strings, rate limits, prompt paths (one place to tune)
-device_profile.py    DeviceProfile dataclass (immutable per run, scope hash for audit)
-pubmed.py            two-track query builder + E-utilities client + dedup
-db.py                SQLite: records / outputs / shared signals / run_log + state setters
-llm.py               Anthropic wrapper: call_json, call_text, call_json_pdf (native PDF)
-prompts/             screen_v1 / extract_v1 / appraise_fulltext_v1 / draft_section_v1
-screen.py            Phase A — abstract relevance screening (Sonnet)
-extract.py           Phase A — abstract-level extraction; flags appraisal_incomplete (Sonnet)
-retrieve.py          Phase A — open-access full-text retrieval (PMC + Unpaywall tiers)
-verify.py            Phase A — identity verification gate (DOI / title) before appraisal
-appraise.py          Phase B — full-text MEDDEV A6 appraisal (PDF native + PMC text) (Opus)
-prisma.py            PRISMA 2020 flow diagram (SVG) from counts
-draft.py             search report (deterministic) + CER draft (LLM, cited)
-pipeline.py          two-phase orchestrator: run_search_and_screen / run_fulltext_appraisal
-app.py               Streamlit two-phase demo UI (upload PDFs between phases)
-tests/offline_demo.py  no-network end-to-end test (retrieval + verification + both phases)
-tests/test_verify.py   unit test for the verification gate, on REAL generated PDFs
+```bash
+python -m pip install reportlab
+for test in tests/test_*.py; do
+  python "$test" || exit 1
+done
 ```
 
-→ This advances **Goal 2** (demonstrable prototype, deadline July 31). The 8–12 min
-demo recording records a real device profile going in and the two output documents
-coming out.
+## Project structure
+
+| Area | Responsibility |
+|---|---|
+| `app.py`, `ui_theme.py` | Streamlit review wizard and presentation |
+| `device_profile.py`, `config.py` | Review inputs and application configuration |
+| `pipeline.py` | Search, screening, retrieval, and appraisal orchestration |
+| `pubmed.py`, `clinicaltrials.py`, `ris_ingest.py` | Evidence-source clients and RIS import |
+| `screen.py`, `extract.py`, `appraise.py`, `llm.py` | AI-assisted evidence processing |
+| `retrieve.py`, `verify.py` | Open-access retrieval and document identity checks |
+| `db.py` | SQLite run state, evidence records, and event log |
+| `outputs.py`, `draft.py`, `prisma.py`, `docx_export.py` | Reports, CER content, PRISMA flow, and Word export |
+| `prompts/` | Versioned prompts used by the AI workflows |
+| `tests/` | Offline checks and demo pipeline |
+
+## Scope and data handling
+
+Vigil is a single-user prototype. It does not include sign-in, multi-tenant
+access controls, or production-grade data retention and deployment controls.
+SQLite is used for run data; do not treat this prototype as durable storage.
+
+Live AI steps send the relevant device-profile information, bibliographic
+metadata, abstracts, or full-text content to Anthropic. Live searches and
+retrieval contact external services including NCBI, ClinicalTrials.gov, and
+Unpaywall. Do not submit confidential, personal, or otherwise sensitive
+information unless you have reviewed the applicable provider terms and have
+authorization to do so.
+
+Vigil only attempts to retrieve open-access full text; it is not designed to
+bypass publisher paywalls. The reviewer is responsible for source selection,
+search completeness, appraisal, interpretation, and final regulatory decisions.
+
+## License
+
+No license file is currently included. Public visibility on GitHub does not by
+itself grant permission to reuse, modify, or distribute this project's code.
