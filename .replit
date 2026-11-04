@@ -1,30 +1,13 @@
-# Tells Replit how to run Vigil. The 'run' button launches the Streamlit demo UI.
 run = "streamlit run app.py --server.port 8080 --server.address 0.0.0.0 --server.headless true"
-modules = ["nodejs-20", "python-3.12"]
+
+modules = ["python-3.12"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["sqlite-interactive"]
-
-[[ports]]
-localPort = 5000
-externalPort = 5000
 
 [[ports]]
 localPort = 8080
 externalPort = 80
 
 [env]
-# Streamlit writes its config here; harmless default.
 PYTHONUNBUFFERED = "1"
-
-[agent]
-expertMode = true
-
-[userenv]
-
-[userenv.shared]
-VIGIL_DEMO_RETMAX = "30"
-VIGIL_MODEL_APPRAISE = "claude-sonnet-4-6"
-VIGIL_MODEL_DRAFT = "claude-sonnet-4-6"
-VIGIL_DEMO_PREFILL = "1"
